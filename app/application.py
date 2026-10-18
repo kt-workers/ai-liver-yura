@@ -10,21 +10,17 @@ from pathlib import Path
 
 from app.adapters.character.yaml_loader import load_character_definition_yaml
 from app.adapters.llm.production import create_openai_port_from_environment
+from app.bootstrap.cli_composition import build_core_application as build_core_application
 from app.bootstrap.cognition_configuration import CoreCognitionConfiguration
 from app.bootstrap.core_components import CoreComponents as CoreComponents
 from app.bootstrap.core_components import compose_core_components
 from app.bootstrap.runtime_application import CoreRuntimeApplication
-from app.bootstrap.cli_composition import build_core_application as build_core_application
 from app.bootstrap.runtime_owners import CoreRuntimeOwners as CoreRuntimeOwners
 from app.bootstrap.runtime_owners import CoreSpeechOwners as CoreSpeechOwners
 from app.bootstrap.runtime_owners import default_core_runtime_owners as default_core_runtime_owners
-from app.bootstrap.system_cognition_configuration import (
-    CoreApplication,
-    CoreRunIdentity,
-)
-from app.bootstrap.system_cognition_configuration import (
-    build_core as build_core,
-)
+from app.bootstrap.system_cognition_configuration import CoreApplication as CoreApplication
+from app.bootstrap.system_cognition_configuration import CoreRunIdentity as CoreRunIdentity
+from app.bootstrap.system_cognition_configuration import build_core as build_core
 from app.config.core import CoreConfig, load_core_config
 from app.config.core_contracts import CoreConfigurationError
 from app.domain.appraisal import descriptor as appraisal_descriptor
