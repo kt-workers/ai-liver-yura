@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from app.bootstrap.appraisal_assembly import AppraisalInitializationProvenance
 from app.bootstrap.composition_contracts import (
     ComponentBindings,
     CoreRunIdentity,
     LLMConnectionBinding,
     SystemCompositionSnapshot,
 )
+from app.bootstrap.executive_assembly import ExecutiveConfigurationProvenance
 from app.bootstrap.speech_production_configuration import SpeechComponentProvenance
-from app.config.appraisal_assembly import AppraisalInitializationProvenance
 from app.config.core import CoreConfig
-from app.config.executive_assembly import ExecutiveConfigurationProvenance
 from app.domain.attention import AttentionSchedulingPolicy
 
 

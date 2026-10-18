@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import asyncio
 
+from app.bootstrap.appraisal_assembly import AppraisalProductionBinding
 from app.bootstrap.cognition_configuration import CoreCognitionConfiguration
 from app.bootstrap.composition_contracts import SystemCompositionSnapshot
 from app.bootstrap.core_components import CoreComponents
-from app.config.appraisal_assembly import AppraisalProductionBinding
+from app.bootstrap.executive_assembly import ExecutiveProductionBinding
 from app.config.core_contracts import CoreConfigurationError, CoreFailureCode
-from app.config.executive_assembly import ExecutiveProductionBinding
 from app.usecases.core_lifecycle import CoreActivationError, CoreApplicationLifecycle
 from app.usecases.resource_cleanup import OwnedResourceLedger
 

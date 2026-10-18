@@ -5,13 +5,13 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
+from app.bootstrap.appraisal_assembly import build_appraisal_configuration
 from app.bootstrap.cognition_configuration import CoreCognitionConfiguration
+from app.bootstrap.executive_assembly import create_executive_configuration
 from app.config.appraisal import load_appraisal_config
-from app.config.appraisal_assembly import build_appraisal_configuration
 from app.config.core import CoreConfig
 from app.config.core_contracts import CoreConfigurationError, CoreFailureCode, resource
 from app.config.executive import load_executive_config
-from app.config.executive_assembly import create_executive_configuration
 from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.attention import AttentionSchedulingPolicy, AttentionTurnStore
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
