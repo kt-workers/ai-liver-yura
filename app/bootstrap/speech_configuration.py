@@ -11,7 +11,7 @@ from app.domain.brain_integration import BrainIntegrationModule
 from app.domain.speech_runtime.shutdown import SpeechRuntimeShutdown
 from app.usecases.brain_integration_runtime import BrainIntegrationWork
 from app.usecases.input_reference_context_facade import CoreInputReferenceContextBinding
-from app.usecases.speech_delivery import CoreSpeechDelivery
+from app.usecases.speech_delivery import CoreSpeechDelivery as CoreSpeechDelivery
 from app.usecases.speech_pipeline import CoreSpeechPipeline
 
 if TYPE_CHECKING:
