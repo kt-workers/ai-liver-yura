@@ -100,7 +100,7 @@ def test_moved_boundary_modules_depend_inward() -> None:
             for module in _imports(path)
             if any(module == prefix or module.startswith(prefix + ".") for prefix in forbidden)
         )
-    assert not violations, "依存方向違反:\\n" + "\\n".join(violations)
+    assert not violations, "依存方向違反:\n" + "\n".join(violations)
 
 
 def test_entrypoint_contains_no_extracted_execution_owners() -> None:
