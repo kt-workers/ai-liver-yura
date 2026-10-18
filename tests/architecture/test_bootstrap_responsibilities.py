@@ -35,21 +35,23 @@ def test_application_owner_and_snapshot_projection_are_separate() -> None:
     assert system.CoreApplication is core_application.CoreApplication
     assert system._snapshot is composition_snapshot._snapshot
     from app.bootstrap import appraisal_assembly, executive_assembly
-    from app.config import appraisal_assembly as old_appraisal
-    from app.config import executive_assembly as old_executive
 
-    assert (
-        old_appraisal.build_appraisal_configuration
-        is appraisal_assembly.build_appraisal_configuration
-    )
-    assert old_appraisal.AppraisalProductionBinding is appraisal_assembly.AppraisalProductionBinding
-    assert (
-        old_executive.create_executive_configuration
-        is executive_assembly.create_executive_configuration
-    )
-    assert old_executive.ExecutiveProductionBinding is executive_assembly.ExecutiveProductionBinding
     assert appraisal_assembly.AppraisalProductionBinding.__module__ == appraisal_assembly.__name__
     assert executive_assembly.ExecutiveProductionBinding.__module__ == executive_assembly.__name__
+    assert not (ROOT / "app/config/appraisal_assembly.py").exists()
+    assert not (ROOT / "app/config/executive_assembly.py").exists()
+    for path in sorted((ROOT / "app/config").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        imports: list[str] = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imports.extend(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.level == 0:
+                imports.append(node.module or "")
+        assert not any(
+            name == "app.bootstrap" or name.startswith("app.bootstrap.")
+            for name in imports
+        ), f"{path}: ConfigからBootstrapへ逆依存しています"
 
 
 def test_assembly_module_contains_no_duplicate_contract_or_lifecycle_class() -> None:
