@@ -38,9 +38,15 @@ def test_application_owner_and_snapshot_projection_are_separate() -> None:
     from app.config import appraisal_assembly as old_appraisal
     from app.config import executive_assembly as old_executive
 
-    assert old_appraisal.build_appraisal_configuration is appraisal_assembly.build_appraisal_configuration
+    assert (
+        old_appraisal.build_appraisal_configuration
+        is appraisal_assembly.build_appraisal_configuration
+    )
     assert old_appraisal.AppraisalProductionBinding is appraisal_assembly.AppraisalProductionBinding
-    assert old_executive.create_executive_configuration is executive_assembly.create_executive_configuration
+    assert (
+        old_executive.create_executive_configuration
+        is executive_assembly.create_executive_configuration
+    )
     assert old_executive.ExecutiveProductionBinding is executive_assembly.ExecutiveProductionBinding
     assert appraisal_assembly.AppraisalProductionBinding.__module__ == appraisal_assembly.__name__
     assert executive_assembly.ExecutiveProductionBinding.__module__ == executive_assembly.__name__

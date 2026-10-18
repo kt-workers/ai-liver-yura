@@ -8,6 +8,7 @@ from datetime import timezone
 from pathlib import Path
 
 from app.adapters.character.yaml_loader import load_character_definition_yaml
+from app.bootstrap.appraisal_assembly import build_appraisal_configuration
 from app.bootstrap.cognition_configuration import CoreCognitionConfiguration
 from app.bootstrap.composition_contracts import ComponentBindings as ComponentBindings
 from app.bootstrap.composition_contracts import CoreRunIdentity as CoreRunIdentity
@@ -19,12 +20,12 @@ from app.bootstrap.composition_contracts import (
 from app.bootstrap.composition_snapshot import _snapshot as _snapshot
 from app.bootstrap.core_application import CoreApplication as CoreApplication
 from app.bootstrap.core_components import compose_core_components
+from app.bootstrap.executive_assembly import create_executive_configuration
 from app.bootstrap.speech_production_configuration import (
     SpeechProductionInputs,
     create_production_speech_configuration,
 )
 from app.config.appraisal import load_appraisal_config
-from app.bootstrap.appraisal_assembly import build_appraisal_configuration
 from app.config.core import ConfigurationReference, load_core_config
 from app.config.core_contracts import (
     CoreConfigurationError,
@@ -32,7 +33,6 @@ from app.config.core_contracts import (
     resource,
 )
 from app.config.executive import load_executive_config
-from app.bootstrap.executive_assembly import create_executive_configuration
 from app.config.llm_connections import load_llm_connections
 from app.domain.activity_binding import ActivityBindingAuthority
 from app.domain.activity_execution import ActivityExecutionAuthority
