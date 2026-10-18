@@ -33,6 +33,7 @@ from app.domain.llm import (
     StructuredPayload,
     validate_role_exchange,
 )
+from app.domain.llm.ports import LLMRolePort
 from app.domain.memory.contracts import (
     MemoryAssertionSemantics,
     MemoryContent,
@@ -41,7 +42,6 @@ from app.domain.memory.contracts import (
     MemoryRelationKind,
     MemoryTemporalState,
 )
-from app.domain.llm.ports import LLMRolePort
 
 from .contracts import (
     MemoryCandidateProposal,
