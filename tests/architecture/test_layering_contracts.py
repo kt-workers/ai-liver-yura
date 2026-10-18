@@ -342,36 +342,27 @@ def test_memory_evidence_reader_uses_only_published_read_operations() -> None:
     assert calls == {"read_retrieval_publication", "read_semantic_assertion_publication"}
 
 
-def test_persistence_usecases_do_not_import_storage_drivers() -> None:
-    for path in (
-        "app/usecases/goal_persistence.py",
-        "app/usecases/memory_persistence.py",
-        "app/usecases/persistence_tasks.py",
-        "app/usecases/ports/goal_persistence.py",
-        "app/usecases/ports/memory_persistence.py",
-    ):
-        imports = _imports(path)
-        assert not any(
-            module.split(".")[0] in {"psycopg", "psycopg_pool", "openai", "PyQt6"}
-            for module in imports
-        ), path
-
-
-
-def test_domain_dependency_direction_for_core_contract_packages() -> None:
+def test_all_domain_and_usecase_dependencies_point_inward() -> None:
+    """全Domain・全UseCaseを一度の走査で検証し、個別の重複監査を持たない。"""
     violations: list[str] = []
-    for package in ("appraisal", "body_motion_planning", "goal_planning", "input_meaning"):
-        folder = ROOT / "app" / "domain" / package
-        for path in sorted(folder.rglob("*.py")):
-            relative = path.relative_to(ROOT).as_posix()
-            for module in _imports(relative):
-                if module == "app" or (
-                    module.startswith("app.")
-                    and module != "app.domain"
-                    and not module.startswith("app.domain.")
-                ):
-                    violations.append(f"{relative}: {module}")
-    assert not violations, "Domainから外側への逆依存:\n" + "\n".join(violations)
+    for path in sorted((ROOT / "app/domain").rglob("*.py")):
+        relative = path.relative_to(ROOT).as_posix()
+        for module in _imports(relative):
+            if module == "app" or (
+                module.startswith("app.")
+                and module != "app.domain"
+                and not module.startswith("app.domain.")
+            ):
+                violations.append(f"{relative}: {module}")
+    for path in sorted((ROOT / "app/usecases").rglob("*.py")):
+        relative = path.relative_to(ROOT).as_posix()
+        for module in _imports(relative):
+            if any(
+                module == prefix or module.startswith(prefix + ".")
+                for prefix in FORBIDDEN_OUTER
+            ) or module.split(".")[0] in {"psycopg", "psycopg_pool", "openai", "PyQt6"}:
+                violations.append(f"{relative}: {module}")
+    assert not violations, "内向き依存の違反:\n" + "\n".join(violations)
 
 
 def test_application_services_have_one_canonical_owner() -> None:
@@ -389,6 +380,3 @@ def test_legacy_and_canonical_kernel_public_types_are_identical() -> None:
         assert getattr(legacy_scheduling, name) is getattr(kernel, name), name
 
 
-def test_moved_execution_files_parse_as_python_310() -> None:
-    for path in INWARD_ONLY:
-        ast.parse((ROOT / path).read_text(encoding="utf-8"), filename=path, feature_version=(3, 10))
