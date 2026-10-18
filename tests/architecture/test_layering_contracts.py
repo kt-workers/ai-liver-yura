@@ -384,5 +384,3 @@ def test_application_services_have_one_canonical_owner() -> None:
 def test_legacy_and_canonical_kernel_public_types_are_identical() -> None:
     for name in kernel.__all__:
         assert getattr(legacy_scheduling, name) is getattr(kernel, name), name
-
-

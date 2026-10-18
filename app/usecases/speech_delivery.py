@@ -78,4 +78,3 @@ class CoreSpeechDelivery:
             )
             if not self.cognition.brain.submit(child).accepted:
                 raise ValueError("Speech preparationをBrain Runtimeが受付しませんでした")
-
