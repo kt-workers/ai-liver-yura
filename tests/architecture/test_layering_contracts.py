@@ -24,29 +24,6 @@ from app.usecases.speech_delivery import CoreSpeechDelivery as CanonicalSpeechDe
 
 ROOT = Path(__file__).resolve().parents[2]
 
-# 同じAST走査を複数ファイルに重複実装せず、境界対象をデータで列挙する。
-INWARD_ONLY = (
-    "app/usecases/brain_input_meaning.py",
-    "app/usecases/task_cleanup.py",
-    "app/usecases/ports/cancellation.py",
-    "app/usecases/input_reference_context.py",
-    "app/usecases/brain_appraisal.py",
-    "app/usecases/attention_binding.py",
-    "app/usecases/core_lifecycle.py",
-    "app/usecases/resource_cleanup.py",
-    "app/usecases/ports/core_lifecycle.py",
-    "app/usecases/ports/brain_work.py",
-    "app/usecases/memory_evidence.py",
-    "app/usecases/goal_persistence.py",
-    "app/usecases/memory_persistence.py",
-    "app/usecases/persistence_tasks.py",
-    "app/runtime/kernel/__init__.py",
-    "app/runtime/kernel/clock.py",
-    "app/runtime/kernel/contracts.py",
-    "app/runtime/kernel/cancellation.py",
-    "app/runtime/kernel/queue.py",
-    "app/runtime/kernel/coordinator.py",
-)
 FORBIDDEN_OUTER = (
     "app.application",
     "app.bootstrap",
@@ -91,19 +68,6 @@ def _imports(path: str) -> tuple[str, ...]:
                     if alias.name != "*"
                 )
     return tuple(modules)
-
-
-def test_moved_boundary_modules_depend_inward() -> None:
-    """同じ層間依存規約を、全移設モジュールの単一監査として実施する。"""
-    violations: list[str] = []
-    for path in INWARD_ONLY:
-        forbidden = KERNEL_FORBIDDEN if path.startswith("app/runtime/kernel/") else FORBIDDEN_OUTER
-        violations.extend(
-            f"{path}: {module}"
-            for module in _imports(path)
-            if any(module == prefix or module.startswith(prefix + ".") for prefix in forbidden)
-        )
-    assert not violations, "依存方向違反:\n" + "\n".join(violations)
 
 
 def test_entrypoint_contains_no_extracted_execution_owners() -> None:
@@ -364,6 +328,14 @@ def test_all_domain_and_usecase_dependencies_point_inward() -> None:
                 module == prefix or module.startswith(prefix + ".")
                 for prefix in FORBIDDEN_OUTER
             ) or module.split(".")[0] in {"psycopg", "psycopg_pool", "openai", "PyQt6"}:
+                violations.append(f"{relative}: {module}")
+    for path in sorted((ROOT / "app/runtime/kernel").rglob("*.py")):
+        relative = path.relative_to(ROOT).as_posix()
+        for module in _imports(relative):
+            if any(
+                module == prefix or module.startswith(prefix + ".")
+                for prefix in KERNEL_FORBIDDEN
+            ):
                 violations.append(f"{relative}: {module}")
     assert not violations, "内向き依存の違反:\n" + "\n".join(violations)
 
