@@ -15,8 +15,8 @@ from app import application as bootstrap
 from app.adapters.llm.production import UnavailableLLMRolePort
 from app.bootstrap import system_cognition_configuration as system
 from app.bootstrap.core_components import compose_core_components
+from app.bootstrap.executive_assembly import create_executive_configuration
 from app.config.core_contracts import CoreConfigurationError
-from app.config.executive_assembly import create_executive_configuration
 from app.config.llm_connections import LLMConnectionConfig
 from app.domain.attention import AttentionTurnStore
 from app.domain.contracts.finalization import FinalizationError
@@ -365,7 +365,7 @@ async def test_cancel_during_provider_construction_reclaims_previous_owners(
 async def test_owned_cleanup_actual_order(monkeypatch: pytest.MonkeyPatch) -> None:
     params = parameters()
     events: list[str] = []
-    from app.config.executive_assembly import ExecutiveProductionBinding
+    from app.bootstrap.executive_assembly import ExecutiveProductionBinding
     from app.domain.contracts.finalization import AuthorityFinalizationParticipant
 
     original_close = ExecutiveProductionBinding.close
