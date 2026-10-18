@@ -21,6 +21,13 @@ def test_unified_cli_entry() -> None:
     from app.bootstrap.cli_composition import build_core_application as canonical_factory
 
     assert public_factory is canonical_factory
+    from app.application import build_core_runtime as public_runtime
+    from app.application import build_persistent_core as public_persistent
+    from app.bootstrap.runtime_assembly import build_core_runtime as canonical_runtime
+    from app.bootstrap.runtime_assembly import build_persistent_core as canonical_persistent
+
+    assert public_runtime is canonical_runtime
+    assert public_persistent is canonical_persistent
 
 
 def test_legacy_layout_directories_are_absent() -> None:

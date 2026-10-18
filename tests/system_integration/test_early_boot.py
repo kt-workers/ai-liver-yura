@@ -29,6 +29,7 @@ from app.application import (
     stop_core,
 )
 from app.bootstrap import core_components as component_factory
+from app.bootstrap import runtime_assembly
 from app.bootstrap.core_application import CoreApplication
 from app.config.core import load_core_config
 from app.domain.brain_integration import (
@@ -493,7 +494,7 @@ def test_descriptor_and_interpreter_receive_the_same_policy(
         observed.append(policy)
         return InputMeaningInterpreter(port, live_context, policy)
 
-    monkeypatch.setattr(bootstrap, "descriptor", descriptor)
+    monkeypatch.setattr(runtime_assembly, "descriptor", descriptor)
     monkeypatch.setattr(component_factory, "InputMeaningInterpreter", interpreter)
     app = build_core_runtime(cognition=full_cognition())
     assert len(observed) == 2

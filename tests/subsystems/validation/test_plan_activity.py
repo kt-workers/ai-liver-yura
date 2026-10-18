@@ -9,6 +9,7 @@ import pytest
 
 from app import application as bootstrap
 from app.bootstrap import core_components as component_factory
+from app.bootstrap import runtime_assembly
 from app.bootstrap.execution_configuration import CoreExecutionConfiguration
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.contracts import CapabilityAvailability, ExecutionStatus, PreconditionRef
@@ -88,7 +89,7 @@ def plan_setup(monkeypatch: pytest.MonkeyPatch, *, mode: str = "normal") -> Any:
         (),
         ExecutionFeedbackRetentionPolicy("test-feedback", 1, 2),
     )
-    monkeypatch.setattr(bootstrap, "GoalCommitmentStore", lambda **kw: value.goals)
+    monkeypatch.setattr(runtime_assembly, "GoalCommitmentStore", lambda **kw: value.goals)
     monkeypatch.setattr(component_factory, "ActivityExecutionAuthority", lambda: value.activity)
     monkeypatch.setattr(component_factory, "SystemRuntimeClock", lambda: value.clock)
     build = bootstrap.build_core_runtime

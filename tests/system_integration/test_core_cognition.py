@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from app import application as bootstrap
+from app.bootstrap import runtime_assembly
 from app.bootstrap.cognition_configuration import CoreCognitionConfiguration
 from app.domain.appraisal import InternalStateReducer
 from app.domain.attention import AttentionSchedulingPolicy, AttentionTurnStore
@@ -84,7 +85,7 @@ def application(monkeypatch: pytest.MonkeyPatch, *, fast: bool = False) -> tuple
         descriptors.extend(role.role_id for role in roles)
         return port
 
-    monkeypatch.setattr(bootstrap, "create_openai_port_from_environment", provider)
+    monkeypatch.setattr(runtime_assembly, "create_openai_port_from_environment", provider)
     requirements = ExecutiveRequirementsOwner(BOUNDS)
     requirements.publish(ExecutiveIntentRequirementsPolicy("test-wait", 1, ()))
     config = CoreCognitionConfiguration(

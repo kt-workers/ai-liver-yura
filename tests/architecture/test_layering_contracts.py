@@ -292,7 +292,7 @@ def test_appraisal_uses_read_only_cancellation_and_shared_clock_contract() -> No
 
 
 def test_core_assembly_uses_application_persistence_bindings_not_adapters() -> None:
-    for path in ("app/application.py", "app/bootstrap/core_components.py"):
+    for path in ("app/bootstrap/runtime_assembly.py", "app/bootstrap/core_components.py"):
         imports = _imports(path)
         assert "app.usecases.goal_persistence" in imports
         assert "app.usecases.memory_persistence" in imports
