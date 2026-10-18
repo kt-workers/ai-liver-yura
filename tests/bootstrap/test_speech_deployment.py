@@ -37,7 +37,7 @@ from app.infrastructure.speech_presentation.supervisor import (
     SpeechPresentationWorkerSupervisor,
 )
 from app.usecases.speech_pipeline import CoreSpeechContextReaders
-from tests.composition.test_system_cognition_configuration import parameters
+from tests.bootstrap.test_system_cognition_configuration import parameters
 from tests.config.test_layered import configured_root, edit
 from tests.helpers.speech_production import production_sources
 

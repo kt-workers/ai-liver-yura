@@ -40,9 +40,9 @@ from app.usecases.presentation_notification import CoreSpeechProductionOwnerConn
 from app.usecases.speech_pipeline import CoreSpeechContextReaders, SpeechOutputPreparationRequest
 from tests.adapters.tts.test_production import FakeTTSClient, capability, registration
 from tests.adapters.tts.test_provider import _policy
-from tests.composition.test_speech_deployment import dependencies
-from tests.composition.test_speech_parallel_preparation import normalizer
-from tests.composition.test_system_cognition_configuration import parameters
+from tests.bootstrap.test_speech_deployment import dependencies
+from tests.bootstrap.test_speech_parallel_preparation import normalizer
+from tests.bootstrap.test_system_cognition_configuration import parameters
 from tests.config.test_layered import configured_root
 from tests.helpers.speech_path import build_speech_path
 from tests.infrastructure.speech_presentation.test_production import worker

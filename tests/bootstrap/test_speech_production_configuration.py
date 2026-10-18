@@ -22,7 +22,7 @@ from app.infrastructure.speech_presentation.supervisor import (
     SpeechPresentationWorkerSupervisor,
 )
 from app.usecases.speech_pipeline import CoreSpeechContextReaders
-from tests.composition.test_system_cognition_configuration import parameters
+from tests.bootstrap.test_system_cognition_configuration import parameters
 from tests.domain.character_language.test_character_language import policy as character_policy
 from tests.domain.semantic_verification.test_semantic_verification import verification_policy
 from tests.domain.speech_runtime.policy_fixtures import runtime_policy
@@ -328,7 +328,7 @@ async def test_cancelled_stop_waits_for_release_then_reraises(monkeypatch: Any) 
 
 @pytest.mark.asyncio
 async def test_cleanup_failure_still_releases_cognition_provider(monkeypatch: Any) -> None:
-    from tests.composition.test_system_cognition_configuration import _FakeLLMAdapter
+    from tests.bootstrap.test_system_cognition_configuration import _FakeLLMAdapter
 
     d = Deployment()
     d.release_error = True
