@@ -10,7 +10,6 @@ import pytest
 from app import application as bootstrap
 from app.bootstrap import core_components as component_factory
 from app.bootstrap.execution_configuration import CoreExecutionConfiguration
-from app.domain.brain_integration import BrainIntegrationModule
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.contracts import CapabilityAvailability, ExecutionStatus, PreconditionRef
 from app.domain.executive import ExecutiveRequirementsOwner, PlanExecutionIntentPayload
@@ -109,7 +108,9 @@ def plan_setup(monkeypatch: pytest.MonkeyPatch, *, mode: str = "normal") -> Any:
         )
 
     monkeypatch.setattr(bootstrap, "build_core_runtime", configured)
-    app, port = application(monkeypatch)
+    # 入力からPlan参照への接続は既存の定型評価で検証する。
+    # 起動時の自律評価は通常どおり動かし、LLM待機による競合は別試験に任せる。
+    app, port = application(monkeypatch, fast=mode == "input")
     if mode == "input":
         return app, provider, value
     delivery = app.cognition.execution
@@ -273,19 +274,6 @@ async def test_no_execution_owner_is_not_success(monkeypatch: pytest.MonkeyPatch
 @pytest.mark.asyncio
 async def test_input_entry_keeps_adopted_plan_and_scope(monkeypatch: pytest.MonkeyPatch) -> None:
     app, provider, value = plan_setup(monkeypatch, mode="input")
-    failures: list[tuple[str, str]] = []
-    appraisal = app.brain._ports[BrainIntegrationModule.APPRAISAL]
-    original_execute = appraisal.execute
-
-    async def observe_failure(work: Any, cancellation: Any) -> Any:
-        try:
-            return await original_execute(work, cancellation)
-        except Exception as error:
-            # 検証用の模擬提供先だけを対象にし、原因を診断してから観測器を撤去する。
-            failures.append((type(error).__name__, str(error)))
-            raise
-
-    monkeypatch.setattr(appraisal, "execute", observe_failure)
     request = replace(spec(), mode=LabMode.INTEGRATED, target_module="plan_activity")
     case = PlanActivityLabCase(
         FIXTURE,
@@ -311,7 +299,6 @@ async def test_input_entry_keeps_adopted_plan_and_scope(monkeypatch: pytest.Monk
     # 設計を弱めず、未達時は対象traceの終端・結果だけを安全に短く表示する。
     assert result.status is RunStatus.COMPLETED, (
         result.blockers,
-        failures,
         tuple(
             (
                 item["module"],
