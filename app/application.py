@@ -19,10 +19,13 @@ from app.bootstrap.runtime_application import CoreRuntimeApplication
 from app.bootstrap.runtime_owners import CoreRuntimeOwners as CoreRuntimeOwners
 from app.bootstrap.runtime_owners import CoreSpeechOwners as CoreSpeechOwners
 from app.bootstrap.runtime_owners import default_core_runtime_owners as default_core_runtime_owners
+from app.bootstrap.speech_production_configuration import SpeechProductionInputs
 from app.bootstrap.system_cognition_configuration import (
     ROOT,
     CoreApplication,
     CoreRunIdentity,
+)
+from app.bootstrap.system_cognition_configuration import (
     build_core as build_core,
 )
 from app.config.core import CoreConfig, load_core_config
