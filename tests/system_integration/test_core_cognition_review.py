@@ -210,6 +210,7 @@ async def test_real_runtime_admission_rejection_reclaims_only_new_source(
     from dataclasses import replace
 
     from app import application as bootstrap
+    from app.bootstrap import runtime_assembly
     from app.config.core import CoreConfig, load_core_config
 
     def small(data: bytes) -> CoreConfig:
@@ -224,7 +225,7 @@ async def test_real_runtime_admission_rejection_reclaims_only_new_source(
             ),
         )
 
-    monkeypatch.setattr(bootstrap, "load_core_config", small)
+    monkeypatch.setattr(runtime_assembly, "load_core_config", small)
     app, _ = application(monkeypatch)
     await app.start()
     try:

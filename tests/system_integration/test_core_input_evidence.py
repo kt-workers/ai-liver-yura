@@ -9,6 +9,7 @@ from typing import Any, cast
 import pytest
 
 from app import application as bootstrap
+from app.bootstrap import runtime_assembly
 from app.application import InputMeaningBrainModulePort, InputMeaningBrainWorkPayload, stop_core
 from app.domain.attention import AttentionSource, AttentionSourceKind
 from app.domain.contracts import RevisionVector
@@ -264,7 +265,7 @@ async def test_precondition_failure_is_not_replaced_by_empty_facts() -> None:
 @pytest.mark.asyncio
 async def test_unified_core_retains_real_success(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        bootstrap, "create_openai_port_from_environment", lambda *_a, **_k: SuccessfulPort()
+        runtime_assembly, "create_openai_port_from_environment", lambda *_a, **_k: SuccessfulPort()
     )
     app = bootstrap.build_core_runtime(cognition=full_cognition())
     source = work()

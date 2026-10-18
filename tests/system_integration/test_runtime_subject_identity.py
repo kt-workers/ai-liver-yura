@@ -7,6 +7,7 @@ import pytest
 import yaml
 
 from app import application as bootstrap
+from app.bootstrap import runtime_assembly
 from app.adapters.character.yaml_loader import load_character_definition_yaml
 from app.adapters.llm.production import UnavailableLLMRolePort
 from app.domain.character.projector import project_character_definition
@@ -38,10 +39,10 @@ def test_production_identity_single_load(tmp_path: Path, alternate: bool, rename
     config_path.write_text(yaml.safe_dump(config))
     with (
         patch.object(
-            bootstrap, "create_openai_port_from_environment", side_effect=UnavailableLLMRolePort
+            runtime_assembly, "create_openai_port_from_environment", side_effect=UnavailableLLMRolePort
         ),
         patch.object(
-            bootstrap,
+            runtime_assembly,
             "load_character_definition_yaml",
             side_effect=lambda _source: load_character_definition_yaml(
                 yaml.safe_dump(document, allow_unicode=True).encode("utf-8")

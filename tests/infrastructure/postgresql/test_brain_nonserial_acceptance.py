@@ -10,6 +10,7 @@ import pytest
 import yaml
 
 from app import application as bootstrap
+from app.bootstrap import runtime_assembly
 from app.application import start_core, stop_core
 from app.domain.activity_execution import ExecutionAdapterReport
 from app.domain.brain_integration import (
@@ -289,7 +290,7 @@ async def test_real_activity_reflection_burst_keeps_foreground_and_bounded_clean
         return await original(request)
 
     monkeypatch.setattr(port, "invoke", controlled)
-    monkeypatch.setattr(bootstrap, "create_openai_port_from_environment", lambda roles: port)
+    monkeypatch.setattr(runtime_assembly, "create_openai_port_from_environment", lambda roles: port)
     persistence = runtime(endpoint)
     app = await bootstrap.build_persistent_core(
         boot_config,

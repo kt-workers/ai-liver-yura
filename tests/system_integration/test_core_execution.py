@@ -259,6 +259,7 @@ async def test_plan_production_configuration_and_feedback(
 
     from app import application as bootstrap
     from app.bootstrap import core_components as component_factory
+    from app.bootstrap import runtime_assembly
     from app.bootstrap.execution_configuration import CoreExecutionConfiguration
     from app.domain.contracts import PreconditionRef
     from app.domain.executive import PlanExecutionIntentPayload
@@ -334,7 +335,7 @@ async def test_plan_production_configuration_and_feedback(
         assert bounds is BOUNDS
         return value.goals
 
-    monkeypatch.setattr(bootstrap, "GoalCommitmentStore", captured_goals)
+    monkeypatch.setattr(runtime_assembly, "GoalCommitmentStore", captured_goals)
     monkeypatch.setattr(component_factory, "ActivityExecutionAuthority", lambda: value.activity)
     monkeypatch.setattr(component_factory, "SystemRuntimeClock", lambda: value.clock)
     monkeypatch.setattr(

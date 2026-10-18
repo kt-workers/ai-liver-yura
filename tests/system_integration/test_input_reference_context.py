@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import pytest
 
 from app import application as bootstrap
+from app.bootstrap import runtime_assembly
 from app.application import start_core, stop_core
 from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
@@ -184,7 +185,7 @@ async def test_unified_boot_uses_real_current_context_and_commits_meaning(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        bootstrap, "create_openai_port_from_environment", lambda _: SuccessfulPort()
+        runtime_assembly, "create_openai_port_from_environment", lambda _: SuccessfulPort()
     )
     baseline = asyncio.all_tasks()
     app = bootstrap.build_core_runtime(cognition=full_cognition())

@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from app import application as bootstrap
+from app.bootstrap import runtime_assembly
 from app.bootstrap.cognition_configuration import CoreCognitionConfiguration
 from app.config.core import load_core_config
 from app.domain.appraisal import InternalStateReducer
@@ -132,7 +133,7 @@ async def test_runtime_queue_rejects_without_executive_for_rejected_trace(
             ),
         )
 
-    monkeypatch.setattr(bootstrap, "load_core_config", small_queue)
+    monkeypatch.setattr(runtime_assembly, "load_core_config", small_queue)
     app, port = application(monkeypatch)
     await bootstrap.start_core(app)
     try:
@@ -231,7 +232,7 @@ async def test_unavailable_provider_preserves_input_failure_without_downstream(
 
     application(monkeypatch)
     monkeypatch.setattr(
-        bootstrap,
+        runtime_assembly,
         "create_openai_port_from_environment",
         lambda roles: UnavailableLLMRolePort(roles),
     )

@@ -179,6 +179,7 @@ async def test_public_boot_registers_roles_and_feeds_memory_into_executive(
     endpoint: PostgresEndpoint, boot_config: Path, monkeypatch: pytest.MonkeyPatch,  # noqa: F811
 ) -> None:
     from app import application as bootstrap
+    from app.bootstrap import runtime_assembly
     from app.bootstrap.cognition_configuration import CoreCognitionConfiguration
     from app.domain.appraisal import InternalStateReducer
     from app.domain.attention import AttentionSchedulingPolicy, AttentionTurnStore
@@ -204,7 +205,7 @@ async def test_public_boot_registers_roles_and_feeds_memory_into_executive(
         registered.extend(r.role_id for r in roles)
         return port
 
-    monkeypatch.setattr(bootstrap, "create_openai_port_from_environment", provider)
+    monkeypatch.setattr(runtime_assembly, "create_openai_port_from_environment", provider)
     requirements = ExecutiveRequirementsOwner(BOUNDS)
     requirements.publish(ExecutiveIntentRequirementsPolicy("wait", 1, ()))
     config = CoreCognitionConfiguration(
