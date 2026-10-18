@@ -48,10 +48,12 @@ def test_application_owner_and_snapshot_projection_are_separate() -> None:
                 imports.extend(alias.name for alias in node.names)
             elif isinstance(node, ast.ImportFrom) and node.level == 0:
                 imports.append(node.module or "")
+        forbidden = ("app.bootstrap", "app.infrastructure", "app.adapters", "app.application")
         assert not any(
-            name == "app.bootstrap" or name.startswith("app.bootstrap.")
+            name == prefix or name.startswith(prefix + ".")
             for name in imports
-        ), f"{path}: ConfigからBootstrapへ逆依存しています"
+            for prefix in forbidden
+        ), f"{path}: Configから外側の組立て・実装へ逆依存しています"
 
 
 def test_assembly_module_contains_no_duplicate_contract_or_lifecycle_class() -> None:

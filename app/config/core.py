@@ -19,7 +19,7 @@ from app.domain.llm import (
     LLMReasoningEffort,
     LLMRequestRetryPolicy,
 )
-from app.infrastructure.scheduling import (
+from app.runtime.kernel import (
     LaneErrorPolicy,
     QueuePolicy,
     RuntimeLanePolicy,
