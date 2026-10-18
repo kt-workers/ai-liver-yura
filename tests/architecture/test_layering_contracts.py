@@ -90,14 +90,17 @@ def _imports(path: str) -> tuple[str, ...]:
     return tuple(modules)
 
 
-@pytest.mark.parametrize("path", INWARD_ONLY)
-def test_moved_boundary_modules_depend_inward(path: str) -> None:
-    forbidden = KERNEL_FORBIDDEN if path.startswith("app/runtime/kernel/") else FORBIDDEN_OUTER
-    violations = [
-        module for module in _imports(path)
-        if any(module == prefix or module.startswith(prefix + ".") for prefix in forbidden)
-    ]
-    assert not violations, f"{path}: {violations}"
+def test_moved_boundary_modules_depend_inward() -> None:
+    """同じ層間依存規約を、全移設モジュールの単一監査として実施する。"""
+    violations: list[str] = []
+    for path in INWARD_ONLY:
+        forbidden = KERNEL_FORBIDDEN if path.startswith("app/runtime/kernel/") else FORBIDDEN_OUTER
+        violations.extend(
+            f"{path}: {module}"
+            for module in _imports(path)
+            if any(module == prefix or module.startswith(prefix + ".") for prefix in forbidden)
+        )
+    assert not violations, "依存方向違反:\\n" + "\\n".join(violations)
 
 
 def test_entrypoint_contains_no_extracted_execution_owners() -> None:
