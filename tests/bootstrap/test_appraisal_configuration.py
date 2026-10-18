@@ -5,7 +5,7 @@ from typing import Any, cast
 import pytest
 
 from app.config.appraisal import load_appraisal_config
-from app.config.appraisal_assembly import build_appraisal_configuration
+from app.bootstrap.appraisal_assembly import build_appraisal_configuration
 from tests.config.test_appraisal import SOURCE
 
 NOW = datetime(2026, 9, 24, tzinfo=timezone.utc)

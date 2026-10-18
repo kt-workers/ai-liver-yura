@@ -24,7 +24,7 @@ from app.bootstrap.speech_production_configuration import (
     create_production_speech_configuration,
 )
 from app.config.appraisal import load_appraisal_config
-from app.config.appraisal_assembly import build_appraisal_configuration
+from app.bootstrap.appraisal_assembly import build_appraisal_configuration
 from app.config.core import ConfigurationReference, load_core_config
 from app.config.core_contracts import (
     CoreConfigurationError,
@@ -32,7 +32,7 @@ from app.config.core_contracts import (
     resource,
 )
 from app.config.executive import load_executive_config
-from app.config.executive_assembly import create_executive_configuration
+from app.bootstrap.executive_assembly import create_executive_configuration
 from app.config.llm_connections import load_llm_connections
 from app.domain.activity_binding import ActivityBindingAuthority
 from app.domain.activity_execution import ActivityExecutionAuthority

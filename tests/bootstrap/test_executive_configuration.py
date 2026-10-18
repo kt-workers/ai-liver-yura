@@ -10,7 +10,7 @@ import pytest
 import yaml
 from openai import APIConnectionError
 
-import app.config.executive_assembly as composition
+import app.bootstrap.executive_assembly as composition
 from app.adapters.llm.openai_responses import OpenAIResponsesAdapter, OpenAIResponsesModelPolicy
 from app.config.executive import (
     ExecutiveConfigurationError,
@@ -407,7 +407,7 @@ def test_factory_uses_no_test_configuration_authority() -> None:
     import ast
     from pathlib import Path
 
-    for path in ("app/config/executive.py", "app/config/executive_assembly.py"):
+    for path in ("app/config/executive.py", "app/bootstrap/executive_assembly.py"):
         tree = ast.parse(Path(path).read_text())
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
