@@ -82,3 +82,31 @@ def test_product_code_has_no_retired_package_or_embedded_edit_instructions() -> 
                 assert "resources/" not in text, str(path)
             assert RETIRED_CONSTRUCTION.search(text) is None, str(path)
             assert not any(fragment in text for fragment in INSTRUCTION_FRAGMENTS), str(path)
+
+
+def test_config_resource_io_and_revision_check_are_outside_bootstrap() -> None:
+    assembly = ast.parse(
+        (ROOT / "app/bootstrap/system_cognition_configuration.py").read_text(
+            encoding="utf-8"
+        )
+    )
+    defined = {
+        node.name
+        for node in assembly.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    assert "_read" not in defined
+    assert "_match" not in defined
+    assert not any(
+        isinstance(node, ast.Attribute) and node.attr == "read_bytes"
+        for node in ast.walk(assembly)
+    )
+    config_module = ast.parse(
+        (ROOT / "app/config/core_resources.py").read_text(encoding="utf-8")
+    )
+    declared = {
+        node.name
+        for node in config_module.body
+        if isinstance(node, ast.FunctionDef)
+    }
+    assert {"read_core_resource", "match_core_reference"} <= declared

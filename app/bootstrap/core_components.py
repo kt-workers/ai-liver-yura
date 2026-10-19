@@ -58,13 +58,23 @@ def compose_core_components(
 ) -> CoreComponents:
     from app.domain.activity_execution.speech_observation import SPEECH_OBSERVATION_POLICY
 
-    activities = prepared_activities or (
-        ActivityExecutionAuthority(observation_policy=SPEECH_OBSERVATION_POLICY)
-        if cognition is not None and cognition.speech is not None
-        else ActivityExecutionAuthority()
+    if cognition is None:
+        raise ValueError("統合本体には認知・主観評価・注意・判断の構成が必須です")
+    activities = (
+        prepared_activities
+        if prepared_activities is not None
+        else (
+            ActivityExecutionAuthority(observation_policy=SPEECH_OBSERVATION_POLICY)
+            if cognition.speech is not None
+            else ActivityExecutionAuthority()
+        )
     )
-    input_context = prepared_context or CoreInputReferenceContextBinding(
-        goals, activities, config.input_meaning_policy, V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
+    input_context = (
+        prepared_context
+        if prepared_context is not None
+        else CoreInputReferenceContextBinding(
+            goals, activities, config.input_meaning_policy, V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
+        )
     )
     interpreter = InputMeaningInterpreter(
         llm,
@@ -75,11 +85,11 @@ def compose_core_components(
         interpreter,
         CoreAcceptedInputStore(V2_BRAIN_OPERATIONAL_BOUNDS_POLICY.executive.max_source_event_refs),
     )
-    clock = prepared_clock or SystemRuntimeClock()
-    lifecycle = lifecycle or ApplicationLifecycle(clock, config.shutdown_policy)
+    clock = prepared_clock if prepared_clock is not None else SystemRuntimeClock()
+    lifecycle = (
+        lifecycle if lifecycle is not None else ApplicationLifecycle(clock, config.shutdown_policy)
+    )
     brain = BrainIntegrationRuntime(clock, config.integration_policy)
-    if cognition is None:
-        raise ValueError("統合本体には認知・主観評価・注意・判断の構成が必須です")
     assert bridge.inputs is not None
     delivery = cognition.compose(
         brain, input_context, bridge.inputs, llm, clock, memory, goals

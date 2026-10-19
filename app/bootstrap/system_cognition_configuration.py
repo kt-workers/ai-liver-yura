@@ -26,13 +26,13 @@ from app.bootstrap.speech_production_configuration import (
     create_production_speech_configuration,
 )
 from app.config.appraisal import load_appraisal_config
-from app.config.core import ConfigurationReference, load_core_config
+from app.config.core import load_core_config
 from app.config.core_contracts import (
     CoreConfigurationError,
     CoreFailureCode,
-    resource,
 )
 from app.config.executive import load_executive_config
+from app.config.core_resources import match_core_reference, read_core_resource
 from app.config.llm_connections import load_llm_connections
 from app.domain.activity_binding import ActivityBindingAuthority
 from app.domain.activity_execution import ActivityExecutionAuthority
@@ -63,22 +63,6 @@ CORE_RESOURCE = "config/core.yaml"
 _OwnedResources = OwnedResourceLedger
 
 
-def _read(root: Path, ref: str) -> bytes:
-    resource(ref)
-    path = (root / ref).resolve()
-    if not path.is_relative_to(root.resolve()):
-        raise CoreConfigurationError(CoreFailureCode.INVALID_SYSTEM_CONFIG)
-    try:
-        return path.read_bytes()
-    except OSError:
-        raise CoreConfigurationError(CoreFailureCode.MISSING_SYSTEM_CONFIG) from None
-
-
-def _match(ref: ConfigurationReference, config_id: str, config_revision: int) -> None:
-    if (ref.config_id, ref.config_revision) != (config_id, config_revision):
-        raise CoreConfigurationError(CoreFailureCode.INVALID_SYSTEM_CONFIG)
-
-
 async def compose_core(
     *,
     run_identity: CoreRunIdentity,
@@ -102,19 +86,19 @@ async def compose_core(
     try:
         if not isinstance(run_identity, CoreRunIdentity):
             raise CoreConfigurationError(CoreFailureCode.INVALID_SYSTEM_CONFIG)
-        config = load_core_config(_read(resource_root, config_ref))
+        config = load_core_config(read_core_resource(resource_root, config_ref))
         if activation_id != config.activation_id or fresh_start is not True:
             raise CoreConfigurationError(CoreFailureCode.ACTIVATION_FAILED)
         runtime = config
         character_ref = config.character_definition
-        character = load_character_definition_yaml(_read(resource_root, character_ref.resource_ref))
+        character = load_character_definition_yaml(read_core_resource(resource_root, character_ref.resource_ref))
         if (character.character_id, character.definition_revision) != (
             character_ref.character_id,
             character_ref.definition_revision,
         ):
             raise CoreConfigurationError(CoreFailureCode.INVALID_SYSTEM_CONFIG)
         connections = load_llm_connections(
-            _read(resource_root, config.llm_connections.resource_ref)
+            read_core_resource(resource_root, config.llm_connections.resource_ref)
         )
         if (connections.config_id, connections.config_revision) != (
             config.llm_connections.config_id,
@@ -137,9 +121,9 @@ async def compose_core(
         owned.actions.append(lifecycle.close)
         stage = CoreFailureCode.APPRAISAL_CONFIGURATION_FAILED
         appraisal_config = load_appraisal_config(
-            _read(resource_root, config.appraisal_config.resource_ref)
+            read_core_resource(resource_root, config.appraisal_config.resource_ref)
         )
-        _match(
+        match_core_reference(
             config.appraisal_config, appraisal_config.config_id, appraisal_config.config_revision
         )
         initialized_at = clock.now()
@@ -153,9 +137,9 @@ async def compose_core(
         )
         stage = CoreFailureCode.EXECUTIVE_CONFIGURATION_FAILED
         executive_config = load_executive_config(
-            _read(resource_root, config.executive_config.resource_ref)
+            read_core_resource(resource_root, config.executive_config.resource_ref)
         )
-        _match(
+        match_core_reference(
             config.executive_config, executive_config.config_id, executive_config.config_revision
         )
         executive = create_executive_configuration(
