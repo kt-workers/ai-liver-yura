@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+# スケジューラ内部の取消状態を保持する。
 import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime

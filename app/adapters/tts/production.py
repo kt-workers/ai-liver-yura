@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 from app.domain.contracts.common import require_identifier, require_revision
 from app.domain.speech_runtime.discard import PreparedAudioDiscardPort, PreparedAudioDiscardRequest
-from app.runtime.lifecycle import DependencyRetryPolicy
+from app.usecases.lifecycle import DependencyRetryPolicy
 
 from .contracts import PronunciationOverrideView, TTSCapabilityView, TTSVoiceBinding
 from .d10_provider import TTSProviderAdapter

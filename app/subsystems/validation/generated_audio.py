@@ -19,7 +19,7 @@ from app.domain.character_language import CharacterUtterance
 from app.domain.contracts.common import JsonValue
 from app.domain.speech_performance import SpeechPerformancePlan
 from app.domain.speech_runtime.presentation import PresentationAdapter
-from app.runtime.lifecycle import DependencyRetryPolicy
+from app.usecases.lifecycle import DependencyRetryPolicy
 
 from .tts import _project
 

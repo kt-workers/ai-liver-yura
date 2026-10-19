@@ -10,7 +10,6 @@ from typing import Any
 import pytest
 
 from app.domain.activity_execution.observation import ObservedExecutionFactRecord
-from app.domain.brain_integration import BrainIntegrationWork
 from app.subsystems.validation.contracts import Gate, LabMode, RunStatus
 from app.subsystems.validation.runtime import RunContext, ValidationRunner
 from app.subsystems.validation.speech_path import (
@@ -21,6 +20,7 @@ from app.subsystems.validation.speech_path import (
     SpeechPathSession,
     speech_path_target,
 )
+from app.usecases.brain_integration_runtime import BrainIntegrationWork
 from tests.helpers.speech_path import build_speech_path
 from tests.subsystems.validation.test_runtime import FIXTURE, POLICY, PROVENANCE, spec
 
@@ -101,7 +101,7 @@ async def setup(
             discarder = PreparedAudioDiscarder(value.pipeline.runtime, resources)
             value.pipeline.discarder = discarder
             value.pipeline.discard_port = resources
-            from app.composition.speech_preparation import PendingSpeechAudioOwner
+            from app.usecases.speech_preparation import PendingSpeechAudioOwner
             value.pipeline._audio = PendingSpeechAudioOwner(resources)
             from app.domain.speech_runtime.contracts import SpeechPresentationMode
             value.pipeline.output_modes = (SpeechPresentationMode.AUDIO_WITH_TEXT,)

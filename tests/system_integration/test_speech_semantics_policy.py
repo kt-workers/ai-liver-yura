@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from app.composition.speech_semantics_policy import (
+from app.bootstrap.speech_semantics_policy import (
     SpeechSemanticPolicyBinding,
     bind_speech_semantics_policy_v1,
     build_speech_semantics_meaning_policy_v1,
@@ -333,7 +333,7 @@ async def test_same_owner_supplies_current_catalog_and_builder_rejects_stale() -
 
 
 def test_production_factory_does_not_import_test_policy() -> None:
-    import app.composition.speech_semantics_policy as production_module
+    import app.bootstrap.speech_semantics_policy as production_module
 
     assert production_module.__file__ is not None
     tree = ast.parse(Path(production_module.__file__).read_text())

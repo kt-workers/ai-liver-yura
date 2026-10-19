@@ -40,7 +40,7 @@ class Wire(asyncio.Transport):
 
 def owner() -> GuiAdminHttpTransport:
     config = load_gui_admin_config(
-        Path("resources/config/v2/gui_admin.yaml").read_text()
+        Path("config/gui_admin.yaml").read_text()
     )
     application = Mock()
     application.respond.return_value = GuiHttpResponse(
@@ -206,8 +206,8 @@ async def test_transport_injected_into_subsystem_reaches_available_and_stops(
 ) -> None:
     from datetime import datetime, timezone
 
-    from app.config.minimum_brain import load_minimum_brain_config
-    from app.runtime.kernel.clock import FakeRuntimeClock
+    from app.config.core import load_core_config
+    from app.infrastructure.scheduling.clock import FakeRuntimeClock
     from app.subsystems.gui_admin.contracts import GuiAdminAvailability
     from app.subsystems.gui_admin.lifecycle import GuiAdminSubsystem
 
@@ -216,8 +216,8 @@ async def test_transport_injected_into_subsystem_reaches_available_and_stops(
     listener.wait_closed = AsyncMock()
     create = AsyncMock(return_value=listener)
     monkeypatch.setattr(asyncio.get_running_loop(), "create_server", create)
-    brain = load_minimum_brain_config(
-        Path("resources/config/v2/minimum_brain.yaml").read_text()
+    brain = load_core_config(
+        Path("config/core.yaml").read_text()
     )
     gui = GuiAdminSubsystem(
         owner().config,

@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+# スケジューラ実装の入出力型。
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum, IntEnum
 from math import isfinite
 from typing import Generic, TypeVar
 
-from app.domain.contracts import RevisionVector
 from app.domain.contracts.common import (
+    RevisionVector,
     require_aware,
     require_identifier,
     require_revision,

@@ -8,11 +8,9 @@ from typing import Any, cast
 
 import pytest
 
-from app import bootstrap
-from app.bootstrap import InputMeaningBrainModulePort, InputMeaningBrainWorkPayload
-from app.composition.accepted_input import CoreAcceptedInput, CoreAcceptedInputStore
-from app.composition.executive import CoreExecutiveBinding
-from app.composition.executive_input_evidence import CoreExecutiveInputEvidenceReader
+from app import application as bootstrap
+from app.application import InputMeaningBrainModulePort, InputMeaningBrainWorkPayload, stop_core
+from app.bootstrap import runtime_assembly
 from app.domain.attention import AttentionSource, AttentionSourceKind
 from app.domain.contracts import RevisionVector
 from app.domain.contracts.common import freeze_json
@@ -24,15 +22,20 @@ from app.domain.executive import (
     GoalTransitionOperation,
     PreconditionFact,
 )
-from app.domain.input_meaning import InputMeaningFreshnessStamp, InputMeaningInterpreter
+from app.domain.input_meaning import InputMeaningFreshnessStamp
 from app.domain.llm import LLMRoleRequest, LLMRoleResult
 from app.domain.plugin_registry import PluginRegistryAuthority
-from app.runtime.kernel import CancellationToken
+from app.infrastructure.scheduling import CancellationToken
+from app.usecases.accepted_inputs import CoreAcceptedInput, CoreAcceptedInputStore
+from app.usecases.executive_facade import CoreExecutiveBinding
+from app.usecases.executive_input_evidence import CoreExecutiveInputEvidenceReader
+from app.usecases.input_meaning import InputMeaningInterpreter
 from tests.domain.executive.test_executive import policy as executive_policy
 from tests.domain.goals.test_goal_commitment_store import apply_goal
 from tests.domain.input_meaning.test_input_meaning import event, policy
 from tests.domain.plugin_registry.test_plugin_registry import grants, manifest
 from tests.helpers.executive_requirements import make_authority
+from tests.helpers.full_core import full_cognition
 from tests.system_integration.test_core_appraisal import Setup, setup
 from tests.system_integration.test_core_attention import connect
 from tests.system_integration.test_core_executive import Port
@@ -260,11 +263,11 @@ async def test_precondition_failure_is_not_replaced_by_empty_facts() -> None:
 
 
 @pytest.mark.asyncio
-async def test_minimum_boot_retains_real_success(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_unified_core_retains_real_success(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        bootstrap, "create_openai_port_from_environment", lambda *_a, **_k: SuccessfulPort()
+        runtime_assembly, "create_openai_port_from_environment", lambda *_a, **_k: SuccessfulPort()
     )
-    app = bootstrap.build_minimum_core()
+    app = bootstrap.build_core_runtime(cognition=full_cognition())
     source = work()
     context = app.input_context.snapshot().context
     payload = cast(InputMeaningBrainWorkPayload, source.payload)
@@ -287,7 +290,7 @@ async def test_minimum_boot_retains_real_success(monkeypatch: pytest.MonkeyPatch
         assert isinstance(retained, CoreAcceptedInput)
         assert retained.result is result
     finally:
-        await app.stop()
+        await stop_core(app)
 
 
 @pytest.mark.asyncio
@@ -391,10 +394,10 @@ async def test_wrong_input_provenance_never_replaces_original(change: str) -> No
 
 @pytest.mark.asyncio
 async def test_activity_facts_come_from_the_actual_execution_owner() -> None:
-    from app.composition.appraisal import CoreAppraisalBinding
-    from app.composition.input_reference_context import CoreInputReferenceContextBinding
     from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
     from app.domain.executive import ExecutiveFactKind
+    from app.usecases.appraisal_facade import CoreAppraisalBinding
+    from app.usecases.input_reference_context_facade import CoreInputReferenceContextBinding
     from tests.domain.appraisal.test_appraisal_paths import policy as appraisal_policy
     from tests.domain.plan_execution.test_progression import WaitingProvider, runner
     from tests.domain.plan_execution.test_progression import setup as plan_setup

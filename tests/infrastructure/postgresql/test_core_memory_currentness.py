@@ -8,21 +8,21 @@ from typing import Any
 
 import pytest
 
-from app.composition.executive import CoreExecutiveBinding, CoreExecutiveEvidence
-from app.composition.executive_input_evidence import CoreExecutiveInputEvidenceReader
-from app.composition.memory_evidence import (
-    CoreMemoryEvidenceConfiguration,
-    CoreMemoryEvidenceReader,
-)
-from app.composition.memory_persistence import CoreMemoryPersistenceBinding
 from app.domain.attention import AttentionSource
 from app.domain.contracts import SemanticSubjectIdentity, SemanticSubjectKind
 from app.domain.contracts.finalization import FinalizationError, FinalizationFailure
 from app.domain.memory import MemoryRetrievalQuery, MemoryWriteRequest
 from app.infrastructure.persistence import PersistenceError, PostgresEndpoint
+from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
 from app.infrastructure.persistence.postgresql_connection import PostgresDatabase
 from app.infrastructure.persistence.postgresql_memory import PostgresMemoryRepository
-from app.runtime.kernel import CancellationToken
+from app.infrastructure.scheduling import CancellationToken
+from app.usecases.executive_facade import CoreExecutiveBinding, CoreExecutiveEvidence
+from app.usecases.executive_input_evidence import CoreExecutiveInputEvidenceReader
+from app.usecases.memory_evidence import (
+    CoreMemoryEvidenceConfiguration,
+    CoreMemoryEvidenceReader,
+)
 from tests.domain.executive.test_executive import policy
 from tests.domain.memory import test_memory_store_retrieval as memory
 from tests.domain.memory.test_semantic_assertions import SEMANTICS

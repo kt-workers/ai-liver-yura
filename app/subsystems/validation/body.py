@@ -9,12 +9,11 @@ from typing import cast
 
 from app.domain.body_motion_planning import (
     BodyMotionPlanAuthority,
-    BodyMotionPlanner,
     BodyMotionPlanningContextSnapshot,
-    BodyMotionPlanningLiveStatePort,
     BodyMotionPlanningPolicy,
 )
 from app.domain.contracts.common import JsonValue, freeze_json
+from app.usecases.body_motion_planning import BodyMotionPlanner, BodyMotionPlanningLiveStatePort
 from app.usecases.ports.llm import LLMRolePort
 
 from .contracts import (

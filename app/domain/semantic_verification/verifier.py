@@ -28,7 +28,7 @@ from app.domain.llm import (
     StructuredPayload,
     validate_role_exchange,
 )
-from app.usecases.ports.llm import LLMRolePort
+from app.domain.llm.ports import LLMRolePort
 
 from .authority import SemanticVerificationAuthority
 from .bounds import (

@@ -1136,7 +1136,9 @@ _V1_CONTEXT_FIELDS = {
 
 
 def _wire_context() -> ExecutiveContextSnapshot:
-    from app.composition.speech_semantics_policy import build_speech_semantics_meaning_policy_v1
+    from app.bootstrap.speech_semantics_policy import (
+        build_speech_semantics_meaning_policy_v1,
+    )
 
     catalog = build_speech_semantics_meaning_policy_v1(
         bounds_policy=policy().bounds

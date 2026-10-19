@@ -12,8 +12,9 @@ from app.domain.attention import (
     ExecutiveTriggerEligibility,
 )
 from app.domain.contracts import RevisionVector
+from app.domain.contracts.lifecycle import ApplicationShutdownPolicy
+from app.infrastructure.scheduling import FakeRuntimeClock
 from app.runtime.kernel import (
-    FakeRuntimeClock,
     LaneErrorPolicy,
     QueuePolicy,
     RuntimeSchedulerPolicy,
@@ -21,17 +22,12 @@ from app.runtime.kernel import (
     WorkDisposition,
     WorkPriority,
 )
-from app.runtime.kernel import (
-    RuntimeCoordinator as KernelRuntimeCoordinator,
-)
-from app.runtime.kernel import (
-    RuntimeLanePolicy as KernelRuntimeLanePolicy,
-)
-from app.runtime.shutdown import RuntimeShutdownPolicy
+from app.runtime.kernel import RuntimeCoordinator as KernelRuntimeCoordinator
+from app.runtime.kernel import RuntimeLanePolicy as KernelRuntimeLanePolicy
 
 NOW = datetime(2026, 8, 16, tzinfo=timezone.utc)
 TEST_SCHEDULER_POLICY = RuntimeSchedulerPolicy("test.scheduler", 1, 8)
-TEST_SHUTDOWN_POLICY = RuntimeShutdownPolicy("test.attention.shutdown", 1, 1.0, 1.0, 1.0, 1.0)
+TEST_SHUTDOWN_POLICY = ApplicationShutdownPolicy("test.attention.shutdown", 1, 1.0, 1.0, 1.0, 1.0)
 
 
 def RuntimeCoordinator(clock: FakeRuntimeClock) -> KernelRuntimeCoordinator:

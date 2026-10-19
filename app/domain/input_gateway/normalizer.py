@@ -172,6 +172,7 @@ class InputNormalizer:
                 observation.session,
                 observation.pointer,
                 observation.contact,
+                observation.lifecycle_change,
             ),
         )
 

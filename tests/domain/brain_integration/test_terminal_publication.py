@@ -8,11 +8,14 @@ import pytest
 from app.domain.brain_integration import (
     BrainIntegrationLane,
     BrainIntegrationModule,
-    BrainIntegrationRuntime,
     BrainWorkStatus,
 )
-from app.domain.brain_integration.runtime import BrainIntegrationWork, BrainIntegrationWorkOutcome
-from app.runtime.kernel import FakeRuntimeClock, QueuePolicy
+from app.infrastructure.scheduling import FakeRuntimeClock, QueuePolicy
+from app.usecases.brain_integration_runtime import (
+    BrainIntegrationRuntime,
+    BrainIntegrationWork,
+    BrainIntegrationWorkOutcome,
+)
 from tests.domain.brain_integration.test_runtime import NOW, FakePort, policy, work
 
 

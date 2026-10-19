@@ -6,11 +6,14 @@ import os
 import sys
 from pathlib import Path
 
-from app.bootstrap import build_persistent_core
-from app.composition.goal_persistence import CoreGoalPersistenceBinding
+from app.application import build_persistent_core
+from app.bootstrap.persistent_cognition_configuration import (
+    create_persistent_cognition_configuration,
+)
 from app.domain.executive import GoalTransitionOperation
 from app.domain.memory import MemoryWriteRequest
 from app.infrastructure.persistence import DurabilityStatus
+from app.infrastructure.persistence.goal_binding import CoreGoalPersistenceBinding
 from app.infrastructure.persistence.postgresql_connection import PostgresEndpoint
 from tests.domain.goals.test_goal_commitment_store import decision, goal_transition
 from tests.domain.memory import test_memory_store_retrieval as memory
@@ -36,6 +39,7 @@ async def main() -> None:
             retry_policy=retry_policy("db", retry_enabled=False),
             runtime_epoch="child-before-exit",
             max_pending_memory=2,
+            cognition_factory=create_persistent_cognition_configuration,
         )
         await app.start()
         assert isinstance(app.goals, CoreGoalPersistenceBinding)

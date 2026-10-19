@@ -1,0 +1,131 @@
+"""統合本体の構成コード分離と禁止された旧構成の残存を検査する。"""
+
+from __future__ import annotations
+
+import ast
+import re
+from pathlib import Path
+
+from app.bootstrap import composition_contracts, composition_snapshot, core_application
+from app.bootstrap import system_cognition_configuration as system
+
+ROOT = Path(__file__).resolve().parents[2]
+SOURCE_DIRS = ("app", "tests", "config", "tools")
+RETIRED_CONSTRUCTION = re.compile(r"(?<![a-zA-Z0-9_])[sS]\x32(?![a-zA-Z0-9_])")
+INSTRUCTION_FRAGMENTS = ("ここの", "機械的に削除", "全体の辻褄", "辻褄がおかしく")
+
+
+def test_composition_contract_types_have_one_definition() -> None:
+    for name in (
+        "CoreRunIdentity",
+        "ComponentBindings",
+        "SubsystemBinding",
+        "LLMConnectionBinding",
+        "SystemCompositionSnapshot",
+    ):
+        canonical = getattr(composition_contracts, name)
+        assert getattr(system, name) is canonical
+        assert canonical.__module__ == composition_contracts.__name__
+    identity = composition_contracts.CoreRunIdentity("epoch", "run")
+    assert identity.runtime_epoch == "epoch"
+    assert identity.system_run_id == "run"
+
+
+def test_application_owner_and_snapshot_projection_are_separate() -> None:
+    assert system.CoreApplication is core_application.CoreApplication
+    assert system._snapshot is composition_snapshot._snapshot
+    from app.bootstrap import appraisal_assembly, executive_assembly
+
+    assert appraisal_assembly.AppraisalProductionBinding.__module__ == appraisal_assembly.__name__
+    assert executive_assembly.ExecutiveProductionBinding.__module__ == executive_assembly.__name__
+    assert not (ROOT / "app/config/appraisal_assembly.py").exists()
+    assert not (ROOT / "app/config/executive_assembly.py").exists()
+    for path in sorted((ROOT / "app/config").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        imports: list[str] = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imports.extend(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.level == 0:
+                imports.append(node.module or "")
+        forbidden = ("app.bootstrap", "app.infrastructure", "app.adapters", "app.application")
+        assert not any(
+            name == prefix or name.startswith(prefix + ".")
+            for name in imports
+            for prefix in forbidden
+        ), f"{path}: Configから外側の組立て・実装へ逆依存しています"
+
+
+def test_assembly_module_contains_no_duplicate_contract_or_lifecycle_class() -> None:
+    assembly = ROOT / "app/bootstrap/system_cognition_configuration.py"
+    source = assembly.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    assert not any(isinstance(node, ast.ClassDef) for node in tree.body)
+    assert any(
+        isinstance(node, ast.AsyncFunctionDef) and node.name == "compose_core"
+        for node in tree.body
+    )
+
+
+def test_product_code_has_no_retired_package_or_embedded_edit_instructions() -> None:
+    for folder in SOURCE_DIRS:
+        for path in (ROOT / folder).rglob("*"):
+            if not path.is_file() or path.suffix not in (".py", ".yaml", ".yml", ".json"):
+                continue
+            # この静的検査の照合文字列自体は検査の対象に含めない。
+            if path.name == "test_bootstrap_responsibilities.py":
+                continue
+            text = path.read_text(encoding="utf-8")
+            if folder == "app":
+                # 末尾ドット有無に依存せず、全製品ファイルを走査する。
+                assert "app.composition" not in text, str(path)
+                assert "resources/" not in text, str(path)
+            assert RETIRED_CONSTRUCTION.search(text) is None, str(path)
+            assert not any(fragment in text for fragment in INSTRUCTION_FRAGMENTS), str(path)
+
+
+def test_config_resource_io_and_revision_check_are_outside_bootstrap() -> None:
+    assembly = ast.parse(
+        (ROOT / "app/bootstrap/system_cognition_configuration.py").read_text(
+            encoding="utf-8"
+        )
+    )
+    defined = {
+        node.name
+        for node in assembly.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    assert "_read" not in defined
+    assert "_match" not in defined
+    assert not any(
+        isinstance(node, ast.Attribute) and node.attr == "read_bytes"
+        for node in ast.walk(assembly)
+    )
+    config_module = ast.parse(
+        (ROOT / "app/config/core_resources.py").read_text(encoding="utf-8")
+    )
+    declared = {
+        node.name
+        for node in config_module.body
+        if isinstance(node, ast.FunctionDef)
+    }
+    assert {"read_core_resource", "match_core_reference"} <= declared
+
+
+def test_bootstrap_depends_on_canonical_clock_and_memory_contracts() -> None:
+    files = (
+        "app/bootstrap/system_cognition_configuration.py",
+        "app/bootstrap/core_components.py",
+        "app/bootstrap/speech_production_configuration.py",
+        "app/bootstrap/speech_deployment.py",
+    )
+    for relative in files:
+        source = (ROOT / relative).read_text(encoding="utf-8")
+        assert "from app.infrastructure.scheduling import RuntimeClock" not in source
+        assert "from app.infrastructure.persistence.memory_binding" not in source
+    for relative in files[:3]:
+        source = (ROOT / relative).read_text(encoding="utf-8")
+        assert "from app.runtime.kernel import RuntimeClock" in source
+    for relative in files[2:]:
+        source = (ROOT / relative).read_text(encoding="utf-8")
+        assert "from app.usecases.memory_persistence import CoreMemoryPersistenceBinding" in source

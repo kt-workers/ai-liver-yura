@@ -6,9 +6,9 @@ from typing import Any
 
 import pytest
 
-from app.composition.execution import CoreExecutionDelivery, ExecutionFeedbackRetentionPolicy
 from app.domain.activity_execution import (
     ActivityExecutionCoordinator,
+    ActivityExecutionRecord,
     ActivityInvocation,
     ExecutionAdapterReport,
     ExecutionCancellationSignal,
@@ -16,18 +16,22 @@ from app.domain.activity_execution import (
     ExecutionEffectUncertainty,
     ExecutionPreflightSnapshot,
 )
-from app.domain.brain_integration.runtime import BrainIntegrationWorkOutcome
+from app.domain.brain_integration import BrainIntegrationModule
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.contracts import CapabilityAvailability, ExecutionStatus
+from app.domain.executive import CommittedExecutiveDecision
 from app.domain.goal_planning import GoalPlanningAuthority
 from app.domain.input_gateway import InputPermission, InputSourceState
 from app.domain.input_gateway.normalizer import InputAdmissionLedger, InputNormalizer
 from app.domain.plan_execution.contracts import PlanExecutionPolicy
 from app.domain.plan_execution.coordinator import PlanExecutionCoordinator
 from app.domain.plan_execution.owner import PlanExecutionCurrentState, PlanExecutionOwner
-from app.runtime.kernel.clock import FakeRuntimeClock
+from app.infrastructure.scheduling.clock import FakeRuntimeClock
+from app.usecases.brain_integration_runtime import BrainIntegrationWorkOutcome
+from app.usecases.execution_facade import CoreExecutionDelivery, ExecutionFeedbackRetentionPolicy
 from tests.domain.activity_binding.test_binding import direct_fixture
 from tests.domain.executive.test_executive import NOW
+from tests.helpers.brain_outcomes import next_outcome_matching
 from tests.helpers.executive_requirements import fence_clock, make_authority
 from tests.system_integration.test_core_cognition import application
 from tests.system_integration.test_early_boot import work
@@ -145,18 +149,30 @@ async def test_direct_actual_execution_returns_to_existing_cognition(
             identity = next(iter(delivery._deliveries))
             assert app.brain.cancel(identity, "cancel")
             app.brain.cancel(identity, "cancel-again")
-        outcomes = []
-        for _ in range(3):
-            outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
-            assert outcome.status.value in {"completed", "cancelled"}, outcome
-            outcomes.append(outcome)
+        execution_outcome = await next_outcome_matching(
+            app.brain,
+            trace_id=parent.envelope.trace_id,
+            module=BrainIntegrationModule.ACTIVITY_EXECUTION,
+        )
+        appraisal_outcome = await next_outcome_matching(
+            app.brain,
+            trace_id=parent.envelope.trace_id,
+            module=BrainIntegrationModule.APPRAISAL,
+        )
+        executive_outcome = await next_outcome_matching(
+            app.brain,
+            trace_id=parent.envelope.trace_id,
+            module=BrainIntegrationModule.EXECUTIVE,
+        )
+        outcomes = [execution_outcome, appraisal_outcome, executive_outcome]
+        assert all(o.status.value in {"completed", "cancelled"} for o in outcomes), outcomes
         assert sum(o.status.value == "cancelled" for o in outcomes) == (result_kind == "cancelled")
         assert len(calls) == (0 if result_kind == "unavailable" else 1)
         assert not delivery._deliveries
-        record = next(o.result for o in outcomes if o.module.value == "activity_execution")
+        record = execution_outcome.result
         if result_kind == "cancelled":
             record = app.activities.snapshot(identity)
-        assert record is not None
+        assert isinstance(record, ActivityExecutionRecord)
         expected = {
             "completed": ExecutionStatus.COMPLETED,
             "unavailable": ExecutionStatus.UNSUPPORTED,
@@ -175,7 +191,9 @@ async def test_direct_actual_execution_returns_to_existing_cognition(
         assert not activity._signals
         assert app.goals.snapshot() == goals_before
         assert app.brain.trace(parent.envelope.trace_id).root_trigger_id == "original-root"
-        assert outcomes[-1].result.candidate.source_event_ids
+        committed = executive_outcome.result
+        assert isinstance(committed, CommittedExecutiveDecision)
+        assert committed.candidate.source_event_ids
         assert record.bindings[0].capability_id == decision.activity_bindings[0].value.capability_id
         clock.advance(1)
         delivery.accept_decision(parent, decision)
@@ -239,8 +257,10 @@ async def test_plan_production_configuration_and_feedback(
 ) -> None:
     from datetime import timedelta
 
-    from app import bootstrap
-    from app.composition.execution_configuration import CoreExecutionConfiguration
+    from app import application as bootstrap
+    from app.bootstrap import core_components as component_factory
+    from app.bootstrap import runtime_assembly
+    from app.bootstrap.execution_configuration import CoreExecutionConfiguration
     from app.domain.contracts import PreconditionRef
     from app.domain.executive import PlanExecutionIntentPayload
     from app.domain.executive.requirements import RequirementSourcePublication
@@ -307,7 +327,7 @@ async def test_plan_production_configuration_and_feedback(
         (),
         ExecutionFeedbackRetentionPolicy("test-feedback", 1, 2),
     )
-    build = bootstrap.build_minimum_core
+    build = bootstrap.build_core_runtime
     from app.domain.brain_operational_bounds import BrainOperationalBoundsPolicy
     from app.domain.goals import GoalCommitmentStore
 
@@ -315,12 +335,12 @@ async def test_plan_production_configuration_and_feedback(
         assert bounds is BOUNDS
         return value.goals
 
-    monkeypatch.setattr(bootstrap, "GoalCommitmentStore", captured_goals)
-    monkeypatch.setattr(bootstrap, "ActivityExecutionAuthority", lambda: value.activity)
-    monkeypatch.setattr(bootstrap, "SystemRuntimeClock", lambda: value.clock)
+    monkeypatch.setattr(runtime_assembly, "GoalCommitmentStore", captured_goals)
+    monkeypatch.setattr(component_factory, "ActivityExecutionAuthority", lambda: value.activity)
+    monkeypatch.setattr(component_factory, "SystemRuntimeClock", lambda: value.clock)
     monkeypatch.setattr(
         bootstrap,
-        "build_minimum_core",
+        "build_core_runtime",
         lambda *a, **kw: build(
             *a, **{**kw, "cognition": replace(kw["cognition"], execution=config)}
         ),
@@ -632,7 +652,7 @@ def test_retention_policy_rejects_invalid_values(policy_id: str, revision: int, 
 def execution_fixture(
     monkeypatch: pytest.MonkeyPatch,
 ) -> tuple[Any, CoreExecutionDelivery, list[ExecutionDispatchRequest]]:
-    from app.composition.execution_configuration import CoreExecutionConfiguration
+    from app.bootstrap.execution_configuration import CoreExecutionConfiguration
 
     app, _ = application(monkeypatch)
     _, _, _, captured, _, _ = direct_fixture()
@@ -717,8 +737,14 @@ async def test_recent_references_preserve_goals_and_total_capacity(
                     proposed, captured, current=current, decision_id=f"bounded-{index}"
                 )
             delivery.accept_decision(work(), decision)
-            for _ in range(3):
-                outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
+            for module in (
+                BrainIntegrationModule.ACTIVITY_EXECUTION,
+                BrainIntegrationModule.APPRAISAL,
+                BrainIntegrationModule.EXECUTIVE,
+            ):
+                outcome = await next_outcome_matching(
+                    app.brain, trace_id="trace-1", module=module
+                )
                 assert outcome.status.value == "completed", outcome
             assert not delivery._deliveries
             delivery.accept_decision(work(), decision)
@@ -806,11 +832,14 @@ async def test_exact_sibling_freshness_and_parent_lane(
         assert len(payloads) == 2
         source = source_a if stale_own_binding else source_b
         source.publish((replace(source.capture().value[0], revision=2, value="changed"),))
-        outcomes = []
-        for _ in range(4):
-            outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
-            outcomes.append(outcome)
-        activity_outcomes = [o for o in outcomes if o.module.value == "activity_execution"]
+        activity_outcomes = [
+            await next_outcome_matching(
+                app.brain,
+                trace_id=parent.envelope.trace_id,
+                module=BrainIntegrationModule.ACTIVITY_EXECUTION,
+            )
+            for _ in range(2)
+        ]
         assert len(activity_outcomes) == 2
         assert all(o.lane is parent.lane for o in activity_outcomes)
         assert len(calls) == 1
@@ -848,7 +877,7 @@ async def test_delivery_reclamation_before_fact_and_rejected_resubmit(
             assert app.brain.cancel(identity, "試験用の開始前取消")
         elif terminal == "superseded":
             assert app.brain.supersede(identity, "試験用の開始前置換")
-        outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
+        outcome = await next_outcome_matching(app.brain, work_id=identity)
         assert outcome.status.value == terminal
         assert not calls
         assert not delivery._deliveries

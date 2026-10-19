@@ -4,8 +4,13 @@ from datetime import datetime, timezone
 import pytest
 
 from app.domain.contracts import RevisionVector
+from app.domain.contracts.lifecycle import (
+    ApplicationShutdownError,
+    ApplicationShutdownPolicy,
+    ApplicationShutdownStage,
+)
+from app.infrastructure.scheduling import FakeRuntimeClock
 from app.runtime.kernel import (
-    FakeRuntimeClock,
     LaneErrorPolicy,
     QueuePolicy,
     RuntimeCoordinator,
@@ -13,11 +18,6 @@ from app.runtime.kernel import (
     RuntimeSchedulerPolicy,
     RuntimeWorkItem,
     WorkPriority,
-)
-from app.runtime.shutdown import (
-    RuntimeShutdownError,
-    RuntimeShutdownPolicy,
-    RuntimeShutdownStage,
 )
 
 NOW = datetime(2026, 9, 1, tzinfo=timezone.utc)
@@ -29,7 +29,7 @@ def test_in_flight_settle_timeout_never_becomes_stopped_after_hard_cancel_cleanu
         runtime = RuntimeCoordinator(
             FakeRuntimeClock(NOW),
             RuntimeSchedulerPolicy("test.scheduler", 1, 8),
-            RuntimeShutdownPolicy("test.shutdown", 1, 0.0, 1.0, 1.0, 1.0),
+            ApplicationShutdownPolicy("test.shutdown", 1, 0.0, 1.0, 1.0, 1.0),
         )
 
         async def handler(_work: RuntimeWorkItem[object], _token: object) -> None:
@@ -64,21 +64,21 @@ def test_in_flight_settle_timeout_never_becomes_stopped_after_hard_cancel_cleanu
         )
         await started.wait()
 
-        with pytest.raises(RuntimeShutdownError) as captured:
+        with pytest.raises(ApplicationShutdownError) as captured:
             await runtime.stop()
 
         assert runtime.state.value == "stopping"
         assert any(
-            failure.stage is RuntimeShutdownStage.IN_FLIGHT_SETTLE
+            failure.stage is ApplicationShutdownStage.IN_FLIGHT_SETTLE
             for failure in captured.value.failures
         )
         assert not any(
-            failure.stage is RuntimeShutdownStage.OWNED_TASK_JOIN
+            failure.stage is ApplicationShutdownStage.OWNED_TASK_JOIN
             for failure in captured.value.failures
         )
         assert runtime.diagnostics().owned_task_count == 0
 
-        with pytest.raises(RuntimeShutdownError):
+        with pytest.raises(ApplicationShutdownError):
             await runtime.stop()
 
     asyncio.run(scenario())

@@ -19,21 +19,10 @@ from app.domain.contracts.common import (
     require_revision,
     thaw_json,
 )
-
-
-class PersistenceFailureCode(str, Enum):
-    UNAVAILABLE = "unavailable"
-    CONNECTION_FAILED = "connection_failed"
-    TIMEOUT = "timeout"
-    PERSISTENCE_CONFLICT = "persistence_conflict"
-    CONSTRAINT_VIOLATION = "constraint_violation"
-    INCOMPATIBLE_STORAGE_VERSION = "incompatible_storage_version"
-    INCOMPATIBLE_PAYLOAD_VERSION = "incompatible_payload_version"
-    MIGRATION_FAILED = "migration_failed"
-    CORRUPT_RECORD = "corrupt_record"
-    INTEGRITY_FAILED = "integrity_failed"
-    CANCELLED = "cancelled"
-    CLOSED = "closed"
+from app.domain.contracts.persistence import DurabilityReceipt as DurabilityReceipt
+from app.domain.contracts.persistence import DurabilityStatus as DurabilityStatus
+from app.domain.contracts.persistence import PersistenceError as PersistenceError
+from app.domain.contracts.persistence import PersistenceFailureCode as PersistenceFailureCode
 
 
 class PersistenceAvailability(str, Enum):
@@ -43,33 +32,9 @@ class PersistenceAvailability(str, Enum):
     CLOSED = "closed"
 
 
-class DurabilityStatus(str, Enum):
-    DURABLE = "durable"
-    PENDING_RETRY = "pending_retry"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
-    SUPERSEDED_BY_NEWER_SNAPSHOT = "superseded_by_newer_snapshot"
-
-
 class IntegrityStatus(str, Enum):
     VALID = "valid"
     INTEGRITY_FAILED = "integrity_failed"
-
-
-@dataclass(frozen=True, slots=True)
-class PersistenceError(Exception):
-    code: PersistenceFailureCode
-    diagnostic: str
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.code, PersistenceFailureCode):
-            raise ValueError("codeが不正です")
-        if (
-            not isinstance(self.diagnostic, str)
-            or not self.diagnostic.strip()
-            or len(self.diagnostic) > 256
-        ):
-            raise ValueError("diagnosticが不正です")
 
 
 def _identifiers(values: object, name: str, *, maximum: int = 64) -> tuple[str, ...]:
@@ -256,36 +221,6 @@ class RehydrationCandidate:
             "decoded_payload",
             _bounded_json(self.decoded_payload, "decoded_payload"),
         )
-
-
-@dataclass(frozen=True, slots=True)
-class DurabilityReceipt:
-    persistence_request_id: str
-    owner_id: str
-    owner_state_revision: int
-    snapshot_or_record_ref: str
-    status: DurabilityStatus
-    durable_at: datetime | None = None
-    storage_revision: int | None = None
-    failure_code: PersistenceFailureCode | None = None
-
-    def __post_init__(self) -> None:
-        for name in ("persistence_request_id", "owner_id", "snapshot_or_record_ref"):
-            require_identifier(getattr(self, name), name)
-        require_revision(self.owner_state_revision, "owner_state_revision")
-        if not isinstance(self.status, DurabilityStatus):
-            raise ValueError("statusが不正です")
-        if self.durable_at is not None:
-            require_aware(self.durable_at, "durable_at")
-        require_revision(self.storage_revision, "storage_revision", optional=True)
-        if self.failure_code is not None and not isinstance(
-            self.failure_code, PersistenceFailureCode
-        ):
-            raise ValueError("failure_codeが不正です")
-        if self.status is DurabilityStatus.DURABLE and self.durable_at is None:
-            raise ValueError("DURABLEにはdurable_atが必要です")
-        if self.status is DurabilityStatus.FAILED and self.failure_code is None:
-            raise ValueError("FAILEDにはfailure_codeが必要です")
 
 
 SnapshotPayload: TypeAlias = Mapping[str, JsonValue] | tuple[JsonValue, ...]

@@ -9,8 +9,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from app.bootstrap import build_persistent_core
-from app.composition.goal_persistence import CoreGoalPersistenceBinding
+from app.application import build_persistent_core, start_core, stop_core
 from app.domain.executive import GoalTransitionOperation
 from app.domain.goals import GoalCommitmentSnapshot
 from app.domain.memory import MemoryWriteRequest
@@ -21,9 +20,11 @@ from app.infrastructure.persistence import (
     PersistenceOperationResult,
     PostgresPersistenceRuntime,
 )
+from app.infrastructure.persistence.goal_binding import CoreGoalPersistenceBinding
 from app.infrastructure.persistence.postgresql_connection import PostgresDatabase, PostgresEndpoint
 from tests.domain.goals.test_goal_commitment_store import decision, goal_transition
 from tests.domain.memory import test_memory_store_retrieval as memory
+from tests.helpers.full_core import full_cognition
 from tests.infrastructure.postgresql.conftest import subprocess_test_environment
 from tests.infrastructure.postgresql.test_memory import POLICY
 from tests.infrastructure.postgresql.test_runtime import runtime
@@ -34,7 +35,7 @@ from tests.system_integration.test_early_boot import no_provider
 @pytest.fixture
 def boot_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     no_provider(monkeypatch)
-    source = yaml.safe_load(Path("resources/config/v2/minimum_brain.yaml").read_text())
+    source = yaml.safe_load(Path("config/core.yaml").read_text())
     source["config_revision"] = 2
     source["shutdown"]["policy_revision"] = 2
     source["shutdown"]["final_persistence_grace_seconds"] = 2.0
@@ -57,10 +58,11 @@ async def test_boot_shares_restored_goals_and_memory_then_closes(
         retry_policy=retry_policy("db", retry_enabled=False),
         runtime_epoch="first",
         max_pending_memory=2,
+        cognition=full_cognition(),
     )
     assert isinstance(first.goals, CoreGoalPersistenceBinding)
     assert first.memory is not None
-    await first.start()
+    await start_core(first)
     try:
         changed = first.goals.apply(
             decision(
@@ -73,7 +75,7 @@ async def test_boot_shares_restored_goals_and_memory_then_closes(
         operation = first.memory.submit_write(MemoryWriteRequest(memory.candidate()))
         assert (await operation.wait()).failure_code is None
     finally:
-        await first.stop()
+        await stop_core(first)
     assert first_runtime.availability is PersistenceAvailability.CLOSED
     assert first_runtime.pending_task_count == 0
     second_runtime = runtime(endpoint)
@@ -83,6 +85,7 @@ async def test_boot_shares_restored_goals_and_memory_then_closes(
         retry_policy=retry_policy("db", retry_enabled=False),
         runtime_epoch="second",
         max_pending_memory=2,
+        cognition=full_cognition(),
     )
     assert isinstance(second.goals, CoreGoalPersistenceBinding)
     assert second.memory is not None
@@ -107,8 +110,8 @@ async def test_boot_shares_restored_goals_and_memory_then_closes(
         result = await second.memory.submit_retrieval(memory.query()).wait()
         assert result.value is not None and len(result.value.items) == 1
     finally:
-        await second.stop()
-        await second.stop()
+        await stop_core(second)
+        await stop_core(second)
     assert second_runtime.pending_task_count == 0
     assert not (asyncio.all_tasks() - baseline)
 
@@ -139,12 +142,13 @@ async def test_boot_restore_failure_keeps_saved_goal_after_reconnect(
                 retry_policy=retry_policy("db", retry_enabled=False),
                 runtime_epoch="failed",
                 max_pending_memory=2,
+            cognition=full_cognition(),
             )
         try:
             assert isinstance(app.goals, CoreGoalPersistenceBinding)
             assert app.goals.restore_failure is PersistenceFailureCode.TIMEOUT
             assert app.input_context.snapshot().goals.goal_revision == 0
-            await app.start()
+            await start_core(app)
             await storage.start()
             change = app.goals.apply(
                 decision(
@@ -154,7 +158,7 @@ async def test_boot_restore_failure_keeps_saved_goal_after_reconnect(
             assert (await change.durability).failure_code is PersistenceFailureCode.TIMEOUT
             assert app.input_context.snapshot().goals.goal_revision == 1
         finally:
-            await app.stop()
+            await stop_core(app)
     finally:
         blocker.close()
         await storage.close()
@@ -174,11 +178,12 @@ async def test_invalid_configuration_closes_transferred_runtime(
     storage = runtime(endpoint)
     with pytest.raises(ValueError, match="猶予"):
         await build_persistent_core(
-            Path("resources/config/v2/minimum_brain.yaml"),
+            Path("config/core.yaml"),
             persistence=storage,
             retry_policy=retry_policy("db"),
             runtime_epoch="invalid",
             max_pending_memory=2,
+            cognition=full_cognition(),
         )
     assert storage.availability is PersistenceAvailability.CLOSED
     assert storage.pending_task_count == 0
@@ -210,6 +215,7 @@ async def test_cancelled_boot_reaps_runtime(
             retry_policy=retry_policy("db"),
             runtime_epoch="cancelled",
             max_pending_memory=2,
+            cognition=full_cognition(),
         )
     )
     await asyncio.wait_for(entered.wait(), 2)
@@ -229,8 +235,8 @@ async def test_stop_reaps_memory_before_database_close(
     monkeypatch: pytest.MonkeyPatch,
     timeout: bool,
 ) -> None:
-    from app.composition.memory_persistence import CoreMemoryPersistenceBinding
-    from app.runtime.shutdown import RuntimeShutdownError, RuntimeShutdownStage
+    from app.domain.contracts.lifecycle import ApplicationShutdownError, ApplicationShutdownStage
+    from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
 
     baseline = asyncio.all_tasks()
     if timeout:
@@ -244,6 +250,7 @@ async def test_stop_reaps_memory_before_database_close(
         retry_policy=retry_policy("db", retry_enabled=False),
         runtime_epoch="stop",
         max_pending_memory=2,
+        cognition=full_cognition(),
     )
     assert app.memory is not None
     entered, release = asyncio.Event(), asyncio.Event()
@@ -262,7 +269,7 @@ async def test_stop_reaps_memory_before_database_close(
         await original(self)
 
     monkeypatch.setattr(CoreMemoryPersistenceBinding, "close", delayed)
-    task = asyncio.create_task(app.stop())
+    task = asyncio.create_task(stop_core(app))
     await asyncio.wait_for(entered.wait(), 2)
     if timeout:
         await asyncio.wait_for(cancelled.wait(), 2)
@@ -275,9 +282,9 @@ async def test_stop_reaps_memory_before_database_close(
     assert storage.availability.value == PersistenceAvailability.AVAILABLE.value
     release.set()
     if timeout:
-        with pytest.raises(RuntimeShutdownError) as caught:
+        with pytest.raises(ApplicationShutdownError) as caught:
             await task
-        assert caught.value.failures[0].stage is RuntimeShutdownStage.FINAL_PERSISTENCE
+        assert caught.value.failures[0].stage is ApplicationShutdownStage.FINAL_PERSISTENCE
     else:
         with pytest.raises(asyncio.CancelledError):
             await task
@@ -296,7 +303,7 @@ async def test_missing_database_keeps_core_running_with_typed_failure(
 
     from app.domain.brain_integration import BrainWorkStatus
     from app.domain.input_meaning import InputMeaningInterpretationResult
-    from app.runtime.lifecycle import DependencyState
+    from app.usecases.lifecycle import DependencyState
     from tests.system_integration.test_early_boot import work
 
     baseline = asyncio.all_tasks()
@@ -307,6 +314,7 @@ async def test_missing_database_keeps_core_running_with_typed_failure(
         retry_policy=retry_policy("db", retry_enabled=False),
         runtime_epoch="unavailable",
         max_pending_memory=2,
+        cognition=full_cognition(),
     )
     try:
         assert app.lifecycle.snapshot("db").state is DependencyState.UNAVAILABLE
@@ -316,16 +324,24 @@ async def test_missing_database_keeps_core_running_with_typed_failure(
         )
         assert isinstance(app.goals, CoreGoalPersistenceBinding)
         assert app.goals.restore_failure is PersistenceFailureCode.UNAVAILABLE
-        await app.start()
-        assert app.brain.submit(work()).accepted
-        outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
+        await start_core(app)
+        submitted_work = work()
+        assert app.brain.submit(submitted_work).accepted
+        # 自律的な起動時評価と利用者入力のworkは別々に観測する。
+        deadline = asyncio.get_running_loop().time() + 2
+        while True:
+            remaining = deadline - asyncio.get_running_loop().time()
+            assert remaining > 0, "入力の認知結果が期限内に届きません"
+            outcome = await asyncio.wait_for(app.brain.next_outcome(), remaining)
+            if outcome.work_id == submitted_work.work_id:
+                break
         assert outcome.status is BrainWorkStatus.COMPLETED
         assert isinstance(outcome.result, InputMeaningInterpretationResult)
         assert app.memory is not None
         result = await app.memory.submit_retrieval(memory.query()).wait()
         assert result.failure_code is PersistenceFailureCode.UNAVAILABLE
     finally:
-        await app.stop()
+        await stop_core(app)
     assert storage.availability is PersistenceAvailability.CLOSED
     assert not (asyncio.all_tasks() - baseline)
 
@@ -367,9 +383,10 @@ async def test_boot_recovers_goal_and_memory_after_other_process_exits_without_s
         retry_policy=retry_policy("db", retry_enabled=False),
         runtime_epoch="parent-after-exit",
         max_pending_memory=2,
+        cognition=full_cognition(),
     )
     try:
-        await app.start()
+        await start_core(app)
         assert isinstance(app.goals, CoreGoalPersistenceBinding)
         assert app.goals.restore_failure is None
         assert app.goals.snapshot().to_dict() == json.loads(stdout)
@@ -380,7 +397,7 @@ async def test_boot_recovers_goal_and_memory_after_other_process_exits_without_s
         assert retrieved.failure_code is None and retrieved.value is not None
         assert len(retrieved.value.items) == 1
     finally:
-        await app.stop()
+        await stop_core(app)
     assert storage.availability is PersistenceAvailability.CLOSED
     assert storage.pending_task_count == 0
     assert not (asyncio.all_tasks() - baseline)
@@ -395,7 +412,7 @@ async def test_boot_database_reconnect_recovers_memory_without_replacing_goal_ow
     import re
     from dataclasses import replace
 
-    from app.runtime.lifecycle import DependencyFailure, DependencyState
+    from app.usecases.lifecycle import DependencyFailure, DependencyState
 
     baseline = asyncio.all_tasks()
     assert re.fullmatch(r"yura_test_[0-9a-f]{32}", endpoint.database)
@@ -427,12 +444,13 @@ async def test_boot_database_reconnect_recovers_memory_without_replacing_goal_ow
             retry_policy=retry_policy("db", initial_backoff_seconds=0.001),
             runtime_epoch="reconnect",
             max_pending_memory=2,
+            cognition=full_cognition(),
         )
         assert isinstance(app.goals, CoreGoalPersistenceBinding)
         owner = app.goals
         assert owner.restore_failure is PersistenceFailureCode.UNAVAILABLE
         assert app.lifecycle.snapshot("db").state is DependencyState.DEGRADED
-        await app.start()
+        await start_core(app)
         await asyncio.wait_for(entered.wait(), 5)
         with admin.transaction() as connection:
             connection.execute(f'ALTER DATABASE "{endpoint.database}" ALLOW_CONNECTIONS true')
@@ -461,7 +479,7 @@ async def test_boot_database_reconnect_recovers_memory_without_replacing_goal_ow
         finally:
             admin.close()
             if app is not None:
-                await app.stop()
+                await stop_core(app)
             else:
                 await storage.close()
     assert storage.availability is PersistenceAvailability.CLOSED

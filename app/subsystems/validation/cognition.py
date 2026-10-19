@@ -4,13 +4,15 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from weakref import WeakKeyDictionary
 
-from app.bootstrap import MinimumCoreApplication
+from app.application import CoreComponents, start_core, stop_core
+from app.bootstrap.runtime_application import CoreRuntimeApplication
 from app.domain.appraisal import AppraisalStateCommit
 from app.domain.brain_integration import BrainIntegrationModule, BrainWorkStatus
 from app.domain.contracts.common import JsonValue
 from app.domain.executive import CommittedExecutiveDecision
 from app.domain.input_gateway import InputAdmission, InputAdmissionStatus
 from app.domain.input_meaning import InputMeaningInterpretationResult
+from app.usecases.brain_integration_runtime import BrainWorkAdmission
 
 from .body import _project
 from .contracts import (
@@ -36,7 +38,22 @@ class NormalCognitionLabCase:
         return _project(self.admission)
 
 
-NormalCognitionApplicationFactory = Callable[[], MinimumCoreApplication]
+NormalCognitionApplicationFactory = Callable[[], CoreComponents | CoreRuntimeApplication]
+
+
+def project_brain_admission(value: BrainWorkAdmission | None) -> JsonValue:
+    """Usecase受付結果を公開可能な契約の値だけに変換する。"""
+    if value is None:
+        return None
+    if not isinstance(value, BrainWorkAdmission):
+        raise ValueError("認知受付結果の公開型が不正です")
+    return _project(
+        {
+            "status": value.status,
+            "work_id": value.work_id,
+            "blocked_by": value.blocked_by,
+        }
+    )
 
 
 def _result_projection(result: object) -> JsonValue:
@@ -67,11 +84,28 @@ def _status(status: BrainWorkStatus, result: object) -> RunStatus:
 class _IterationApplication:
     """runに登録する終了処理は1件とし、現在iterationの資源だけを保持する。"""
 
-    current: MinimumCoreApplication | None = None
+    current: CoreComponents | CoreRuntimeApplication | None = None
+
+    async def start(self) -> None:
+        """起動状態は正式Runtime境界に委譲し、裸の構成値は互換入口へ渡す。"""
+        if isinstance(self.current, CoreRuntimeApplication):
+            await self.current.start()
+        elif isinstance(self.current, CoreComponents):
+            await start_core(self.current)
+        else:
+            raise ValueError("本体の起動対象が未登録です")
 
     async def stop(self) -> None:
-        if self.current is not None:
-            await self.current.stop()
+        """正式Runtimeの停止と、構成DTOの停止を混同しない。"""
+        current = self.current
+        if current is None:
+            return
+        try:
+            if isinstance(current, CoreRuntimeApplication):
+                await current.stop()
+            else:
+                await stop_core(current)
+        finally:
             self.current = None
 
 
@@ -119,27 +153,27 @@ def normal_cognition_target(
         if owner.current is not None:
             raise ValueError("前iterationのアプリケーションが未停止です")
         app = application_factory()
-        if not isinstance(app, MinimumCoreApplication):
-            raise ValueError("factoryは正規MinimumCoreApplicationを返す必要があります")
+        if not isinstance(app, (CoreComponents, CoreRuntimeApplication)):
+            raise ValueError("factoryは正規の本体または構成済み要素を返す必要があります")
         owner.current = app
         stop = owner.stop
         if app.cognition is None:
             await stop()
             return TargetObservation(RunStatus.BLOCKED_UPSTREAM, Gate.NOT_RUN, None)
-        await context.invoke_product("cognition.start", app.start)
+        await context.invoke_product("cognition.start", owner.start)
 
         async def submit() -> object:
             assert app.cognition is not None
             return app.cognition.submit_input(case.admission)
-
-        from app.domain.brain_integration import BrainWorkAdmission
 
         accepted = await context.invoke_product("cognition.submit_input", submit)
         assert isinstance(accepted, BrainWorkAdmission)
         if not accepted.accepted:
             await stop()
             return TargetObservation(
-                RunStatus.PRODUCT_FAILED, Gate.FAIL, _project({"admission": accepted})
+                RunStatus.PRODUCT_FAILED,
+                Gate.FAIL,
+                _project({"admission": project_brain_admission(accepted)}),
             )
         event = case.admission.event.envelope
         observed: set[str] = set()
@@ -148,14 +182,14 @@ def normal_cognition_target(
         complete = False
         # module別の段数表は持たず、実際のtraceの未観測workを追う。
         # 有限な通常認知module集合とLabPolicyの双方で観測数を制限する。
-        for _ in range(min(len(BrainIntegrationModule), context.policy.max_intervals)):
+        expected_limit = min(len(BrainIntegrationModule), context.policy.max_intervals)
+        while len(observed) < expected_limit:
             outcome = await context.invoke_product("cognition.outcome", app.brain.next_outcome)
+            if outcome.trace_id != event.trace_id:
+                continue
             trace = app.brain.trace(event.trace_id)
-            if (
-                outcome.trace_id != event.trace_id
-                or outcome.work_id in observed
-                or outcome.work_id not in {i.work_id for i in trace.intervals}
-            ):
+            expected_work_ids = {i.work_id for i in trace.intervals}
+            if outcome.work_id in observed or outcome.work_id not in expected_work_ids:
                 raise ValueError("通常認知の公開outcomeとtraceが一致しません")
             observed.add(outcome.work_id)
             outputs.append(
@@ -198,7 +232,7 @@ def normal_cognition_target(
             Gate.PASS if structural else Gate.FAIL,
             _project(
                 {
-                    "admission": accepted,
+                    "admission": project_brain_admission(accepted),
                     "outcomes": outputs,
                     "trace": trace,
                 }

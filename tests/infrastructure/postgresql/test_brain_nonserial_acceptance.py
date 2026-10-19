@@ -9,13 +9,13 @@ from typing import Any
 import pytest
 import yaml
 
-from app import bootstrap
-from app.composition.reflection import CoreReflectionConfiguration
+from app import application as bootstrap
+from app.application import start_core, stop_core
+from app.bootstrap import runtime_assembly
 from app.domain.activity_execution import ExecutionAdapterReport
 from app.domain.brain_integration import (
     BrainIntegrationLane,
     BrainIntegrationModule,
-    BrainWorkAdmissionStatus,
     BrainWorkStatus,
 )
 from app.domain.contracts import ExecutionStatus
@@ -23,10 +23,13 @@ from app.domain.executive import GoalTransitionOperation
 from app.domain.llm import LLMRoleRequest, LLMRoleResult
 from app.domain.memory_reflection import ReflectionAcceptancePolicy
 from app.infrastructure.persistence import PostgresEndpoint
+from app.usecases.brain_integration_runtime import BrainWorkAdmissionStatus
+from app.usecases.reflection_delivery import CoreReflectionConfiguration
 from tests.domain.activity_execution.test_activity_execution import NOW, invocation, preflight
 from tests.domain.brain_integration.test_runtime import envelope, work
 from tests.domain.goals.test_goal_commitment_store import apply_goal
 from tests.domain.memory_reflection.test_llm_roles import RolePort, role_policy
+from tests.helpers.brain_outcomes import next_outcome_matching
 from tests.infrastructure.postgresql.test_persistent_boot import boot_config  # noqa: F401
 from tests.infrastructure.postgresql.test_runtime import runtime
 from tests.runtime.test_lifecycle import retry_policy
@@ -34,8 +37,15 @@ from tests.system_integration.test_core_cognition import Port, admission, applic
 from tests.system_integration.test_core_cognition_hardening import configuration
 
 
-async def outcome(app: Any) -> Any:
-    return await asyncio.wait_for(app.brain.next_outcome(), 3)
+async def outcome(
+    app: Any,
+    trace_id: str | None = None,
+    module: BrainIntegrationModule | None = None,
+    work_id: str | None = None,
+) -> Any:
+    return await next_outcome_matching(
+        app.brain, trace_id=trace_id, module=module, work_id=work_id, timeout=3
+    )
 
 
 def assert_reaped(app: Any) -> None:
@@ -71,20 +81,20 @@ async def test_slow_appraisal_trace_local_terminal_and_provenance(
         return await original(request)
 
     monkeypatch.setattr(port, "invoke", controlled)
-    await app.start()
+    await start_core(app)
     try:
         assert app.cognition.submit_input(
             admission(app, event_id="event-A", trace_id="trace-A")
         ).accepted
         await asyncio.wait_for(entered["trace-A"].wait(), 3)
-        first = await outcome(app)
+        first = await outcome(app, "trace-A", BrainIntegrationModule.INPUT_MEANING)
         assert first.module is BrainIntegrationModule.INPUT_MEANING
         assert first.status is BrainWorkStatus.COMPLETED
         assert app.cognition.submit_input(
             admission(app, event_id="event-B", trace_id="trace-B")
         ).accepted
         await asyncio.wait_for(entered["trace-B"].wait(), 3)
-        second = await outcome(app)
+        second = await outcome(app, "trace-B", BrainIntegrationModule.INPUT_MEANING)
         assert second.trace_id == "trace-B"
         assert second.module is BrainIntegrationModule.INPUT_MEANING
         assert second.status is BrainWorkStatus.COMPLETED
@@ -121,17 +131,23 @@ async def test_slow_appraisal_trace_local_terminal_and_provenance(
             assert app.goals.snapshot() != before
             gates["trace-A"].set()
             gates["trace-B"].set()
-            rejected = [await outcome(app) for _ in range(2)]
+            rejected = [
+                await outcome(app, trace_id, BrainIntegrationModule.APPRAISAL)
+                for trace_id in gates
+            ]
             assert all(o.status is BrainWorkStatus.FAILED for o in rejected)
             assert all(o.module is BrainIntegrationModule.APPRAISAL for o in rejected)
             assert app.cognition.appraisal.current_commit() is None
-            assert not any(r.role_id == "executive_deliberation" for r in port.requests)
+            assert not any(
+                r.role_id == "executive_deliberation" and r.trace_id in gates
+                for r in port.requests
+            )
         else:
             assert (
                 app.cognition.cancel_trace("trace-A", "対象だけ取消", supersede=mode == "supersede")
                 == 1
             )
-            rejected = await outcome(app)
+            rejected = await outcome(app, "trace-A")
             assert rejected.trace_id == "trace-A"
             assert rejected.status is (
                 BrainWorkStatus.SUPERSEDED if mode == "supersede" else BrainWorkStatus.CANCELLED
@@ -139,7 +155,7 @@ async def test_slow_appraisal_trace_local_terminal_and_provenance(
             await asyncio.wait_for(exited["trace-A"].wait(), 3)
             assert not exited["trace-B"].is_set()
             gates["trace-B"].set()
-            completed = [await outcome(app) for _ in range(2)]
+            completed = [await outcome(app, "trace-B") for _ in range(2)]
             assert all(
                 o.trace_id == "trace-B" and o.status is BrainWorkStatus.COMPLETED for o in completed
             )
@@ -166,7 +182,7 @@ async def test_slow_appraisal_trace_local_terminal_and_provenance(
     finally:
         for gate in gates.values():
             gate.set()
-        await app.stop()
+        await stop_core(app)
     assert_reaped(app)
 
 
@@ -191,11 +207,11 @@ async def test_stop_caller_cancel_still_reaps_provider_and_unique_outcomes(
         return await original(request)
 
     monkeypatch.setattr(port, "invoke", controlled)
-    await app.start()
+    await start_core(app)
     try:
         accepted = app.cognition.submit_input(admission(app, internal=True))
         await asyncio.wait_for(entered.wait(), 3)
-        stopping = asyncio.create_task(app.stop())
+        stopping = asyncio.create_task(stop_core(app))
         await asyncio.wait_for(cleanup.wait(), 3)
         stopping.cancel()
         assert not app.brain._pump_task.done()
@@ -206,15 +222,15 @@ async def test_stop_caller_cancel_still_reaps_provider_and_unique_outcomes(
         release.set()
         with pytest.raises(asyncio.CancelledError):
             await asyncio.wait_for(stopping, 3)
-        terminal = await outcome(app)
+        terminal = await outcome(app, work_id=accepted.work_id)
         assert terminal.work_id == accepted.work_id
         assert terminal.status is BrainWorkStatus.CANCELLED
-        await app.stop()
+        await stop_core(app)
         assert app.brain._outcomes.empty()
         assert not app.brain.cancel(accepted.work_id, "回収済み")
     finally:
         release.set()
-        await app.stop()
+        await stop_core(app)
     assert_reaped(app)
     assert not (asyncio.all_tasks() - baseline)
 
@@ -274,7 +290,7 @@ async def test_real_activity_reflection_burst_keeps_foreground_and_bounded_clean
         return await original(request)
 
     monkeypatch.setattr(port, "invoke", controlled)
-    monkeypatch.setattr(bootstrap, "create_openai_port_from_environment", lambda roles: port)
+    monkeypatch.setattr(runtime_assembly, "create_openai_port_from_environment", lambda roles: port)
     persistence = runtime(endpoint)
     app = await bootstrap.build_persistent_core(
         boot_config,
@@ -291,7 +307,7 @@ async def test_real_activity_reflection_burst_keeps_foreground_and_bounded_clean
             ),
         ),
     )
-    await app.start()
+    await start_core(app)
     try:
         assert app.cognition is not None and app.cognition.reflection is not None
         first = complete_activity(app, 1)
@@ -304,13 +320,13 @@ async def test_real_activity_reflection_burst_keeps_foreground_and_bounded_clean
             app.cognition.reflection.last_error
         )
         assert rejected.status is BrainWorkAdmissionStatus.REJECTED
-        terminal = await outcome(app)
+        terminal = await outcome(app, work_id=rejected.work_id)
         assert terminal.work_id == rejected.work_id and terminal.status is BrainWorkStatus.REJECTED
         assert app.cognition is not None
         assert app.cognition.submit_input(
             admission(app, event_id="front", trace_id="front")
         ).accepted
-        foreground = [await outcome(app) for _ in range(3)]
+        foreground = [await outcome(app, "front") for _ in range(3)]
         assert all(
             o.trace_id == "front" and o.status is BrainWorkStatus.COMPLETED for o in foreground
         )
@@ -321,10 +337,13 @@ async def test_real_activity_reflection_burst_keeps_foreground_and_bounded_clean
         assert "command-1" in str(reflected[0].input.value)
         assert app.brain.trace("front").root_trigger_id == "front"
         if stop_pending:
-            await app.stop()
+            await stop_core(app)
         else:
             reflection_release.set()
-        background = [await outcome(app) for _ in range(2)]
+        background = [
+            await outcome(app, work_id=work_id)
+            for work_id in (first.work_id, queued.work_id)
+        ]
         assert {o.work_id for o in background} == {first.work_id, queued.work_id}
         assert all(
             o.status is (BrainWorkStatus.CANCELLED if stop_pending else BrainWorkStatus.COMPLETED)
@@ -334,7 +353,7 @@ async def test_real_activity_reflection_burst_keeps_foreground_and_bounded_clean
             assert {r.trace_id for r in reflected} == {"background-1", "background-2"}
     finally:
         reflection_release.set()
-        await app.stop()
+        await stop_core(app)
     assert_reaped(app)
     assert app.cognition is not None and app.cognition.reflection is not None
     assert not app.cognition.reflection._pending

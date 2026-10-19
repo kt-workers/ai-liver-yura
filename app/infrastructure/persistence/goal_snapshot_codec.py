@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from datetime import datetime
 
 from app.domain.contracts.common import JsonValue, freeze_json
+from app.domain.contracts.persistence import GOAL_PERSISTENCE_OWNER_ID as OWNER_ID
 from app.domain.goal_commitment_semantics import GoalCommitmentSemanticSpec
 from app.domain.goals.contracts import (
     CommitmentState,
@@ -24,7 +25,6 @@ from .contracts import (
     RehydrationCandidate,
 )
 
-OWNER_ID = "goals"
 SNAPSHOT_KIND = "goal_commitment"
 SCHEMA_ID = "goals.commitment.snapshot.v2"
 SCHEMA_VERSION = 2

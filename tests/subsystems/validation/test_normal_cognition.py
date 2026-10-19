@@ -3,11 +3,11 @@
 import asyncio
 from collections.abc import Callable
 from dataclasses import replace
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
-from app.bootstrap import MinimumCoreApplication
+from app.bootstrap.runtime_application import CoreRuntimeApplication
 from app.domain.executive import GoalTransitionOperation
 from app.subsystems.validation.body import _project
 from app.subsystems.validation.cognition import NormalCognitionLabCase, normal_cognition_target
@@ -34,16 +34,17 @@ def setup(
     app, port = application(monkeypatch)
     event = admission(app, internal=internal)
     fixture = replace(FIXTURE, typed_inputs=_project(event))
-    created: list[MinimumCoreApplication] = []
+    created: list[CoreRuntimeApplication] = []
     ports = []
 
-    def factory() -> MinimumCoreApplication:
+    def factory() -> CoreRuntimeApplication:
         current, provider = (app, port) if not created else application(monkeypatch)
+        assert isinstance(current, CoreRuntimeApplication)
         if slow:
             provider.release.clear()
         created.append(current)
         ports.append(provider)
-        return cast(MinimumCoreApplication, current)
+        return current
 
     target = normal_cognition_target(
         (NormalCognitionLabCase(fixture, event),),
@@ -66,7 +67,7 @@ async def test_production_chain_and_repeated_fresh_owner(
 ) -> None:
     runner, request, fixture, apps, ports, _ = setup(monkeypatch, internal=internal)
     result = await runner.run(replace(request, repeat_count=2), fixture)
-    assert result.status is RunStatus.COMPLETED, result
+    assert result.status is RunStatus.COMPLETED, (result.blockers, result.timeline)
     assert result.machine_gate is Gate.PASS
     assert len(apps) == 2 and apps[0] is not apps[1]
     assert apps[0].brain is not apps[1].brain
@@ -213,15 +214,15 @@ async def test_typed_meaning_failure_does_not_wait_for_next_work(
 @pytest.mark.asyncio
 async def test_repeated_caller_cancel_waits_for_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
     runner, request, fixture, apps, ports, _ = setup(monkeypatch, internal=True, slow=True)
-    original = MinimumCoreApplication.stop
+    original = CoreRuntimeApplication.stop
     entered, release = asyncio.Event(), asyncio.Event()
 
-    async def stop(app: MinimumCoreApplication) -> None:
+    async def stop(app: CoreRuntimeApplication) -> None:
         entered.set()
         await release.wait()
         await original(app)
 
-    monkeypatch.setattr(MinimumCoreApplication, "stop", stop)
+    monkeypatch.setattr(CoreRuntimeApplication, "stop", stop)
     before = asyncio.all_tasks()
     task = asyncio.create_task(runner.run(request, fixture))
     await asyncio.wait_for(wait_for_ports(ports), 2)
@@ -240,7 +241,7 @@ async def test_repeated_caller_cancel_waits_for_cleanup(monkeypatch: pytest.Monk
 async def test_missing_cognition_is_blocked_and_stopped(monkeypatch: pytest.MonkeyPatch) -> None:
     runner, request, fixture, _, _, target = setup(monkeypatch)
     app, _ = application(monkeypatch)
-    no_cognition = replace(app, cognition=None)
+    no_cognition = replace(app.components, cognition=None)
     event = admission(app)
     fixture = replace(fixture, typed_inputs=_project(event))
     target = normal_cognition_target(
@@ -289,12 +290,12 @@ async def test_provenance_mismatch_never_creates_or_starts_production(
     current = replace(PROVENANCE, **{field: value})
     starts = 0
 
-    async def forbidden_start(app: MinimumCoreApplication) -> None:
+    async def forbidden_start(app: CoreRuntimeApplication) -> None:
         nonlocal starts
         starts += 1
         raise AssertionError("不一致の来歴で本番を起動してはいけません")
 
-    monkeypatch.setattr(MinimumCoreApplication, "start", forbidden_start)
+    monkeypatch.setattr(CoreRuntimeApplication, "start", forbidden_start)
     runner, request, fixture, apps, ports, _ = setup(
         monkeypatch,
         provenance_source=lambda: current,
@@ -342,3 +343,25 @@ async def test_provenance_is_read_again_before_each_iteration(
     assert result.stage_results[0].status is RunStatus.COMPLETED
     assert result.stage_results[1].machine_gate is Gate.NOT_RUN
     assert len(apps) == 1 and calls == 2 and runner.pending_count == 0
+
+
+def test_brain_admission_is_projected_without_usecase_object() -> None:
+    """本体の受付結果を検証用の安全な公開値として保存できる。"""
+    from app.subsystems.validation.cognition import project_brain_admission
+    from app.usecases.brain_integration_runtime import BrainWorkAdmission, BrainWorkAdmissionStatus
+
+    accepted = BrainWorkAdmission(BrainWorkAdmissionStatus.ACCEPTED, "accepted-1")
+    rejected = BrainWorkAdmission(
+        BrainWorkAdmissionStatus.REJECTED, "rejected-1", ("prerequisite-1",)
+    )
+    assert project_brain_admission(accepted) == _project(
+        {"status": "accepted", "work_id": "accepted-1", "blocked_by": ()}
+    )
+    assert project_brain_admission(rejected) == _project(
+        {
+            "status": "rejected",
+            "work_id": "rejected-1",
+            "blocked_by": ("prerequisite-1",),
+        }
+    )
+    assert project_brain_admission(None) is None

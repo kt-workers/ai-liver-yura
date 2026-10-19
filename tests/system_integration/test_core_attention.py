@@ -5,7 +5,6 @@ from dataclasses import replace
 
 import pytest
 
-from app.composition.attention import CoreAttentionBinding
 from app.domain.appraisal import DeterministicAppraisalRule, StateDeltaProposal
 from app.domain.attention import (
     AttentionIngressOperation,
@@ -16,6 +15,7 @@ from app.domain.attention import (
 )
 from app.domain.contracts import RevisionVector
 from app.domain.executive import GoalTransitionOperation
+from app.usecases.attention_facade import CoreAttentionBinding
 from tests.domain.appraisal.test_appraisal_paths import JOY
 from tests.domain.goals.test_goal_commitment_store import apply_goal
 from tests.system_integration.test_core_appraisal import Port, Setup, setup

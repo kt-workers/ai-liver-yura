@@ -30,8 +30,8 @@ from app.domain.llm import (
     StructuredPayload,
     validate_role_exchange,
 )
+from app.domain.llm.ports import LLMRolePort
 from app.domain.plan_execution.progress_contracts import PlanStepCompletionClaim
-from app.usecases.ports.llm import LLMRolePort
 
 from .authority import ExecutiveDecisionAuthority
 from .contracts import (

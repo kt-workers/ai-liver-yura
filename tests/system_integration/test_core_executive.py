@@ -7,7 +7,6 @@ from typing import Any, cast
 
 import pytest
 
-from app.composition.executive import CoreExecutiveBinding, CoreExecutiveEvidence
 from app.domain.attention import AttentionSource
 from app.domain.contracts import CapabilityAvailability
 from app.domain.contracts.common import JsonValue
@@ -20,7 +19,8 @@ from app.domain.executive import (
     ExecutiveSourceEvent,
 )
 from app.domain.llm import LLMRoleRequest, LLMRoleResult, StructuredPayload
-from app.runtime.kernel import CancellationToken
+from app.infrastructure.scheduling import CancellationToken
+from app.usecases.executive_facade import CoreExecutiveBinding, CoreExecutiveEvidence
 from tests.domain.executive.test_executive import (
     candidate_json,
     live_state,
@@ -271,7 +271,7 @@ async def test_matching_source_header_cannot_hide_wrong_event_lineage() -> None:
 
 @pytest.mark.asyncio
 async def test_already_cancelled_request_does_not_read_or_invoke() -> None:
-    from app.runtime.kernel.contracts import CancellationRecord
+    from app.infrastructure.scheduling.contracts import CancellationRecord
 
     value = wired()
     token = CancellationToken()

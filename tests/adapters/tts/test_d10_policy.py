@@ -13,7 +13,7 @@ from app.adapters.tts import (
     TTSUnitParameterMappingRule,
     validate_tts_policy_bundle,
 )
-from app.runtime.lifecycle import DependencyRetryPolicy
+from app.usecases.lifecycle import DependencyRetryPolicy
 
 
 def signed_rule(

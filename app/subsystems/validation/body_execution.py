@@ -11,7 +11,6 @@ from app.domain.body_integration import BodyIntegrationRuntime, BodyPlanningSubm
 from app.domain.body_motion_planning import (
     BodyMotionPlan,
     BodyMotionPlanAuthority,
-    BodyMotionPlanner,
     BodyMotionPlanningCommitState,
     BodyMotionPlanningContextSnapshot,
     BodyMotionPlanningPolicy,
@@ -35,6 +34,7 @@ from app.domain.body_solver import (
 )
 from app.domain.body_solver.spatial import BodySpatialTargetSnapshot
 from app.domain.contracts.common import JsonValue
+from app.usecases.body_motion_planning import BodyMotionPlanner
 from app.usecases.ports.llm import LLMRolePort
 
 from .body import _project
