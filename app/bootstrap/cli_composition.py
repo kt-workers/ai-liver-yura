@@ -9,6 +9,7 @@ from app.bootstrap.core_application import CoreApplication
 from app.bootstrap.runtime_owners import CoreRuntimeOwners, default_core_runtime_owners
 from app.bootstrap.speech_production_configuration import SpeechProductionInputs
 from app.bootstrap.system_cognition_configuration import ROOT, CoreRunIdentity, build_core
+from app.config.core_contracts import CoreConfigurationError, CoreFailureCode
 from app.config.layered import ConfigurationError, load_user_configuration
 from app.infrastructure.scheduling import SystemRuntimeClock
 
@@ -53,7 +54,10 @@ async def build_core_application(
     owners: CoreRuntimeOwners | None = None,
 ) -> CoreApplication:
     """通常CLIが使用する本体構成を、既存公開factoryだけで組み立てる。"""
-    runtime_owners = owners or default_core_runtime_owners()
+    runtime_owners = owners if owners is not None else default_core_runtime_owners()
+    if runtime_owners.memory is None:
+        # MemoryはSpeechの有効設定とは独立した本体必須Owner。
+        raise CoreConfigurationError(CoreFailureCode.INVALID_SYSTEM_CONFIG)
     run = _new_core_run_identity()
     speech = _load_core_speech(run, runtime_owners)
     return await build_core(
