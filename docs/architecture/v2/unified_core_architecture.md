@@ -84,7 +84,11 @@ Speechは意味計画・人物らしい言語化・検証・出力処理の責�
 | `app/bootstrap/composition_contracts.py` | 実行識別子、構成結果を記録する不変契約 | 外部I/O、起動停止、Provider生成 |
 | `app/bootstrap/composition_snapshot.py` | 確定済みConfig/Ownerの来歴を型付きSnapshotへ射影 | Ownerの生成、状態遷移、リソースの取得 |
 | `app/bootstrap/core_application.py` | 完成した本体を保持し、開始・停止を既存ライフサイクルへ委譲 | LLM設定の読み込み、個別認知の判断 |
-| `app/bootstrap/system_cognition_configuration.py` | 設定読込、参照検証、Ownerの組立て、構築失敗時の解放 | 構成DTO定義、利用者向け起動ループ、認知結果の判定 |
+| `app/config/core_resources.py` | 設定root配下の安全な参照読込と構成ID・revisionの一致検証 | Runtime Ownerの生成、認知の判断 |
+| `app/bootstrap/system_cognition_configuration.py` | Configの読込関数を呼出し、検証済み値からOwnerを接続し構築失敗時に解放 | 設定ファイルI/Oの独自実装、構成DTO定義、認知結果の判定 |
+| `app/bootstrap/cli_composition.py` | 標準CLIから同じ構成runへ明示Ownerを注入し、必須Ownerの未登録を失敗として返す | 必須Ownerの欠落を省略構成の成功として扱うこと |
+
+製品の標準起動では、少なくともMemoryの未登録は構成失敗とし、Speech・Body等の未登録についても同じ完全構成の受入基準で扱う。**最初の欠落だけを拒否する修正は全Ownerが構成できた証明ではない。** 不足の状態と実装順は[受入対応表](unified_core_acceptance_matrix.md)で区別する。
 
 異常は従来の `CoreConfigurationError` と失敗コードへ正規化し、構築失敗やキャンセル時の資源回収を省略しない。既存呼び出しが参照する公開名は移行期間だけ元の入口から明示的に再公開し、同じクラスの複製定義を作らない。改修後はクラス定義箇所の単一性、import恒等性、停止処理、Snapshotの値と全pytestを検証する。
 
