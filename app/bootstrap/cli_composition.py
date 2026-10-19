@@ -68,4 +68,5 @@ async def build_core_application(
         fast_rules=runtime_owners.fast_rules,
         llm_adapters=production_llm_connection_adapters(),
         speech=speech,
+        memory=runtime_owners.memory,
     )

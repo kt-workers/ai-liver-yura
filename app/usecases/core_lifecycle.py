@@ -42,7 +42,7 @@ async def stop_core(components: CoreLifecycleComponents) -> None:
 
 async def _close_core_memory(components: CoreLifecycleComponents) -> None:
     try:
-        if components.memory is not None:
+        if components.memory is not None and not components.memory_is_borrowed:
             try:
                 await asyncio.wait_for(
                     components.memory.close(),

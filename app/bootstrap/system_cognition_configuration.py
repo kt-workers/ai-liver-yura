@@ -55,6 +55,7 @@ from app.runtime.kernel import RuntimeClock
 from app.usecases.core_lifecycle import stop_core
 from app.usecases.input_reference_context import CoreInputReferenceContextBinding
 from app.usecases.lifecycle import ApplicationLifecycle
+from app.usecases.memory_persistence import CoreMemoryPersistenceBinding
 from app.usecases.resource_cleanup import OwnedResourceLedger
 from app.usecases.task_cleanup import reap_owned_task
 
@@ -76,6 +77,7 @@ async def compose_core(
     fast_rules: tuple[DeterministicAppraisalRule, ...],
     llm_adapters: tuple[LLMConnectionAdapter, ...],
     speech: SpeechProductionInputs | None = None,
+    memory: CoreMemoryPersistenceBinding | None = None,
     config_ref: str = CORE_RESOURCE,
     resource_root: Path = ROOT,
 ) -> CoreApplication:
@@ -86,6 +88,13 @@ async def compose_core(
     try:
         if not isinstance(run_identity, CoreRunIdentity):
             raise CoreConfigurationError(CoreFailureCode.INVALID_SYSTEM_CONFIG)
+        if memory is not None and not isinstance(memory, CoreMemoryPersistenceBinding):
+            raise CoreConfigurationError(CoreFailureCode.INVALID_SYSTEM_CONFIG)
+        if speech is not None and not isinstance(speech, SpeechProductionInputs):
+            raise CoreConfigurationError(CoreFailureCode.INVALID_SYSTEM_CONFIG)
+        if speech is not None and memory is not None and speech.memory is not memory:
+            raise CoreConfigurationError(CoreFailureCode.INVALID_SYSTEM_CONFIG)
+        registered_memory = speech.memory if speech is not None else memory
         config = load_core_config(read_core_resource(resource_root, config_ref))
         if activation_id != config.activation_id or fresh_start is not True:
             raise CoreConfigurationError(CoreFailureCode.ACTIVATION_FAILED)
@@ -203,11 +212,13 @@ async def compose_core(
             character,
             llm,
             goals,
+            memory=registered_memory,
             lifecycle=lifecycle,
             cognition=cognition,
             prepared_activities=activities,
             prepared_context=reference,
             prepared_clock=clock,
+            memory_is_borrowed=registered_memory is not None,
         )
         # 構築中の失敗にはCore全体の回収を登録し、正常返却時はアプリへ所有権を渡す。
         owned.actions.remove(lifecycle.close)
@@ -280,6 +291,7 @@ async def build_core(
     fast_rules: tuple[DeterministicAppraisalRule, ...],
     llm_adapters: tuple[LLMConnectionAdapter, ...] = (),
     speech: SpeechProductionInputs | None = None,
+    memory: CoreMemoryPersistenceBinding | None = None,
     config_ref: str = CORE_RESOURCE,
     resource_root: Path = ROOT,
 ) -> CoreApplication:
@@ -296,6 +308,7 @@ async def build_core(
         fast_rules=fast_rules,
         llm_adapters=llm_adapters,
         speech=speech,
+        memory=memory,
         config_ref=config_ref,
         resource_root=resource_root,
     )

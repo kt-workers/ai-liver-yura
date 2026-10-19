@@ -37,6 +37,7 @@ class CoreRuntimeOwners:
     activity_bindings: Mapping[str, ActivityBindingAuthority]
     fast_rules: tuple[DeterministicAppraisalRule, ...]
     speech: CoreSpeechOwners | None = None
+    memory: CoreMemoryPersistenceBinding | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.registry, PluginRegistryAuthority) or not isinstance(
@@ -52,6 +53,11 @@ class CoreRuntimeOwners:
         )
         if self.speech is not None and not isinstance(self.speech, CoreSpeechOwners):
             raise ValueError("Speech起動には既存Speech Ownerの明示入力が必要です")
+        if self.memory is not None and not isinstance(self.memory, CoreMemoryPersistenceBinding):
+            raise ValueError("Memory起動には既存Memory Ownerの明示入力が必要です")
+        if self.memory is not None and self.speech is not None:
+            if self.speech.memory is not self.memory:
+                raise ValueError("Speechと認知は同一Memory Ownerを参照する必要があります")
 
 
 def default_core_runtime_owners() -> CoreRuntimeOwners:

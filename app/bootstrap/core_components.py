@@ -42,6 +42,7 @@ class CoreComponents:
     runtime_subject_identity: RuntimeSubjectIdentity
     memory: CoreMemoryPersistenceBinding | None = None
     cognition: CoreCognitionDelivery | None = None
+    memory_is_borrowed: bool = False
 
 
 def compose_core_components(
@@ -56,6 +57,7 @@ def compose_core_components(
     prepared_activities: ActivityExecutionAuthority | None = None,
     prepared_context: CoreInputReferenceContextBinding | None = None,
     prepared_clock: RuntimeClock | None = None,
+    memory_is_borrowed: bool = False,
 ) -> CoreComponents:
     from app.domain.activity_execution.speech_observation import SPEECH_OBSERVATION_POLICY
 
@@ -115,4 +117,5 @@ def compose_core_components(
         ),
         memory,
         delivery,
+        memory_is_borrowed,
     )
