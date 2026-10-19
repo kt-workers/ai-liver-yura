@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+from typing import Any, cast
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -45,8 +48,11 @@ def test_full_core_config_is_the_only_product_config() -> None:
 
 
 def test_core_components_reject_partial_brain_registration() -> None:
-    source = (ROOT / "app/bootstrap/core_components.py").read_text()
-    assert "統合本体には認知・主観評価・注意・判断の構成が必須" in source
+    from app.bootstrap.core_components import compose_core_components
+
+    placeholder = cast(Any, object())
+    with pytest.raises(ValueError, match="認知・主観評価・注意・判断"):
+        compose_core_components(placeholder, placeholder, placeholder, placeholder)
 
 
 def test_settings_are_in_config_directory() -> None:
