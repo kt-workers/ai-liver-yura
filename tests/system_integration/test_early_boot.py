@@ -7,6 +7,7 @@ import os
 import signal
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -409,7 +410,15 @@ def test_stop_failure_propagates_but_lifecycle_is_closed(monkeypatch: pytest.Mon
 def test_run_loop_cancellation_cleans_signals_and_owned_tasks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from tests.bootstrap.test_system_cognition_configuration import parameters
+
     no_provider(monkeypatch)
+
+    async def configured_test_core() -> CoreApplication:
+        # この試験はsignal/lifecycle専用。製品起動完了の証拠にはしない。
+        return await bootstrap.build_core(**parameters())
+
+    monkeypatch.setattr(bootstrap, "build_core_application", configured_test_core)
     original_start = CoreApplication.start
 
     async def scenario() -> None:
@@ -438,7 +447,63 @@ def test_run_loop_cancellation_cleans_signals_and_owned_tasks(
 
 
 @pytest.mark.parametrize("stop_signal", [signal.SIGINT, signal.SIGTERM])
-def test_entrypoint_subprocess_graceful_shutdown(stop_signal: signal.Signals) -> None:
+def test_run_loop_signal_stops_injected_test_core(
+    stop_signal: signal.Signals,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tests.bootstrap.test_system_cognition_configuration import parameters
+
+    async def scenario() -> None:
+        app = await bootstrap.build_core(**parameters())
+        started = asyncio.Event()
+        original_start = CoreApplication.start
+
+        async def start(self: CoreApplication) -> None:
+            await original_start(self)
+            started.set()
+
+        async def provided() -> CoreApplication:
+            return app
+
+        monkeypatch.setattr(CoreApplication, "start", start)
+        monkeypatch.setattr(bootstrap, "build_core_application", provided)
+        loop = asyncio.get_running_loop()
+        callbacks: dict[signal.Signals, Callable[[], None]] = {}
+        removed: set[signal.Signals] = set()
+
+        def register(signum: signal.Signals, callback: Callable[[], None]) -> None:
+            callbacks[signum] = callback
+
+        def remove(signum: signal.Signals) -> bool:
+            removed.add(signum)
+            return True
+
+        monkeypatch.setattr(loop, "add_signal_handler", register)
+        monkeypatch.setattr(loop, "remove_signal_handler", remove)
+        previous = {s: signal.getsignal(s) for s in (signal.SIGINT, signal.SIGTERM)}
+        runner = asyncio.create_task(bootstrap.run_core())
+        try:
+            await asyncio.wait_for(started.wait(), 2)
+            assert set(callbacks) == {signal.SIGINT, signal.SIGTERM}
+            callbacks[stop_signal]()
+            await asyncio.wait_for(runner, 2)
+            assert removed == {signal.SIGINT, signal.SIGTERM}
+            assert {s: signal.getsignal(s) for s in previous} == previous
+            assert not app._owned.actions
+        finally:
+            if not runner.done():
+                runner.cancel()
+                try:
+                    await runner
+                except asyncio.CancelledError:
+                    pass
+
+    asyncio.run(scenario())
+
+
+def test_product_subprocess_rejects_missing_required_memory() -> None:
+    """製品の不足Ownerを起動完了として宣言しない。実signal受入は別途必要。"""
+
     async def scenario() -> None:
         env = dict(os.environ)
         env.pop("YURA_OPENAI_API_KEY", None)
@@ -453,15 +518,10 @@ def test_entrypoint_subprocess_graceful_shutdown(stop_signal: signal.Signals) ->
             stderr=asyncio.subprocess.PIPE,
         )
         try:
-            assert child.stdout is not None
-            ready = await asyncio.wait_for(child.stdout.readline(), 10)
-            assert ready.decode().strip() == "ゆら本体の起動が完了しました。"
-            assert child.returncode is None
-            child.send_signal(stop_signal)
-            stdout, stderr = await asyncio.wait_for(child.communicate(), 8)
-            assert child.returncode == 0
+            stdout, stderr = await asyncio.wait_for(child.communicate(), 10)
+            assert child.returncode == 1
             assert stdout == b""
-            assert stderr == b""
+            assert b"INVALID_SYSTEM_CONFIG" in stderr
         finally:
             if child.returncode is None:
                 child.kill()
