@@ -154,6 +154,8 @@ async def test_production_factory_shared_binding_snapshot_and_single_cleanup(
     assert app.cognition.speech.evidence.sources._goals is app.core.goals
     assert app.cognition.speech.evidence.sources._execution is app.core.activities
     assert app.cognition.speech.evidence.sources._memory is d.memory
+    assert app.core.memory is d.memory
+    assert app.core.memory_is_borrowed
     p = app.composition_snapshot.component_bindings[0].speech
     assert p is not None
     meaning = d.owner.publication().value.meaning
@@ -495,3 +497,11 @@ async def test_same_policy_values_with_new_owner_generation_during_acquire_rejec
     with pytest.raises(CoreConfigurationError, match="INITIALIZATION_FAILED"):
         await bootstrap.build_core(**parameters(), speech=d.inputs())
     assert d.events == ["acquire", "release"]
+
+
+@pytest.mark.asyncio
+async def test_speech_and_brain_must_reference_the_same_memory_owner() -> None:
+    d = Deployment()
+    different = Deployment().memory
+    with pytest.raises(CoreConfigurationError, match="INVALID_SYSTEM_CONFIG"):
+        await bootstrap.build_core(**parameters(), speech=d.inputs(), memory=different)

@@ -418,3 +418,22 @@ async def test_application_preserves_public_cleanup_failure_code() -> None:
         await app.stop()
     assert "非公開の終了失敗詳細" not in str(caught.value)
     assert not app._owned.actions
+
+
+@pytest.mark.asyncio
+async def test_supplied_memory_owner_is_wired_without_speech_and_remains_borrowed() -> None:
+    from tests.helpers.speech_production import production_sources
+
+    memory = production_sources()._memory
+    app = await bootstrap.build_core(**parameters(), memory=memory)
+    assert app.core.memory is memory
+    assert app.core.memory_is_borrowed
+    await app.start()
+    await app.stop()
+    assert app.core.memory is memory
+
+
+@pytest.mark.asyncio
+async def test_memory_registration_rejects_invalid_owner_before_provider_connection() -> None:
+    with pytest.raises(CoreConfigurationError, match="INVALID_SYSTEM_CONFIG"):
+        await bootstrap.build_core(**parameters(), memory=object())  # type: ignore[arg-type]

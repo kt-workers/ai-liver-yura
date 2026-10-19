@@ -94,6 +94,7 @@ class _Components:
     cognition: _Cognition | None
     memory: _Closer | None
     lifecycle: _Closer
+    memory_is_borrowed: bool = False
 
 
 def _components(events: list[str]) -> _Components:
@@ -317,3 +318,17 @@ async def test_core_operations_remain_available_without_application_wrapper() ->
         "brain.start", "autonomy.start", "brain.stop", "speech", "reflection",
         "memory", "lifecycle",
     ]
+
+
+@pytest.mark.asyncio
+async def test_borrowed_memory_is_not_closed_by_core() -> None:
+    events: list[str] = []
+    core = _components(events)
+    core.memory_is_borrowed = True
+    assert core.memory is not None
+    borrowed = core.memory
+    await stop_core(core)
+    assert "memory" not in events
+    assert "brain.stop" in events
+    assert "lifecycle" in events
+    assert borrowed is core.memory
