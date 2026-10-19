@@ -48,8 +48,8 @@ from app.domain.speech_semantics.planner import (
     descriptor as semantics_descriptor,
 )
 from app.domain.speech_semantics.production import SpeechSemanticPolicyOwner
-from app.runtime.kernel import RuntimeClock
 from app.infrastructure.speech_presentation.supervisor import SpeechPresentationWorkerSupervisor
+from app.runtime.kernel import RuntimeClock
 from app.usecases.brain_integration_runtime import BrainIntegrationWork
 from app.usecases.cognition_delivery import CoreCognitionDelivery
 from app.usecases.input_reference_context_facade import CoreInputReferenceContextBinding
