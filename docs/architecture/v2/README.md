@@ -1,5 +1,9 @@
 # V2アーキテクチャ正本索引
 
+現在の統合本体の製品構成・依存方向・Python 3.10.5・受入条件は[`unified_core_architecture.md`](unified_core_architecture.md)を基準とする。構成の詳細は[`configuration_architecture.md`](configuration_architecture.md)、Brainの結合検証は[`brain_integration_contracts.md`](brain_integration_contracts.md)、実装再構築の作業優先順位は[`production_plan_current.md`](production_plan_current.md)を参照する。
+
+旧Minimum Core / S2専用起動に関する資料・Issue・工程の記述は歴史的記録であり、現行の製品起動の指示ではない。現在の実装は`config/`と`app/bootstrap/`を使い、`resources/`や`app/composition/`を復活させない。
+
 ## 設計完了・製造順
 
 - **`unified_core_architecture.md` — ゆら本体の唯一の起動構成・フォルダ・責務・受入条件の正本。旧Minimum/S2構成を廃止。**

@@ -239,7 +239,7 @@ Executive SpeechIntent
 
 Simple path may avoid a dedicated #362 LLM while still producing the same `SpeechSemanticPlan` Authority contract.
 
-#334 does not require actual TTS/Avatar for minimum Brain text Integration. #348 can use a fake/text Presentation adapter for deterministic Integration.
+#334のBrain結合を決定論的に検証する際、実TTS/Avatarへの接続は必須ではない。#348のfake/text Presentation adapterを利用してよいが、統合本体のBrain/Speech Owner責務を省略した製品構成を意味しない。
 
 Human Character quality is not #334 automated acceptance.
 
@@ -332,12 +332,12 @@ Integration never implements `any revision changed -> cancel everything`.
 
 ## 15. Degraded optional dependencies
 
-Brain minimum text cognition must support:
-- no TTS
-- no Avatar
-- no DB persistence
-- no Plugin
-- no Streaming/Game
+統合本体のBrain Ownerを保ったまま、次の任意外部接続がない場合・利用できない場合の認知継続を検証する:
+- TTS未接続
+- Avatar未接続
+- DB永続化Unavailable（Memory Ownerは維持）
+- Plugin未接続
+- Streaming/Game未接続
 
 Memory persistence unavailable:
 - #332/#359 expose degradation; current interaction can continue if safe.
@@ -405,7 +405,7 @@ Tracing is read-only evidence and not state Authority.
 
 ## 18. Integration fake topology
 
-Minimum deterministic setup:
+統合本体のOwner責務を保った決定論的な試験構成:
 - fake Input Gateway/events
 - fake/deterministic Meaning/Appraisal/Executive roles where needed
 - real Domain Authorities/stores
@@ -415,7 +415,7 @@ Minimum deterministic setup:
 - in-memory Memory repository
 - fake clock
 
-TTS/Body/Avatar/Streaming are not mandatory for #334 minimum Brain Integration.
+TTS/Body/Avatar/Streamingの実接続は#334の決定論的Brain結合試験の必須条件ではない。Ownerの責務や本体の起動構成を縮小せず、必要なPortをfakeへ差し替えて検証する。
 
 ---
 
@@ -759,15 +759,15 @@ Input Gateway §7の意味は変更しない。`CoreSpeechFeedback`のgeneric do
 
 ### #721の本番所有接続
 
-`CoreSpeechProductionOwnerConnection`は#613の本番接続を完成するCompositionの不変入力である。
+`CoreSpeechProductionOwnerConnection`は#613の本番接続を完成するBootstrap組立ての不変入力である。
 `ActivityExecutionAuthority`、`AttentionTurnStore`、`CoreInputReferenceContextBinding`、process共有
-`InputNormalizer`、`CoreCognitionDelivery`は同じS2 production Ownerの既存instanceをそのまま受け取る。
+`InputNormalizer`、`CoreCognitionDelivery`は同じ統合本体の正規Ownerの既存instanceをそのまま受け取る。
 connectionはこれらの意味、generation、admission、settlementを再実装せず、readerとnotificationへ
 同じinstanceを渡すだけとする。
 
 `SpeechOutputPreparationRequest`のcandidate identity、generation、発話、Performance、trace/root、
 deadline、priority、preparation disposition、created_atは`speech_pipeline_architecture.md`の#721節を
-正本とする。Compositionは候補やtraceを新造せず、#720のTTS production connectionのprovider、voice、
+正本とする。Bootstrapは候補やtraceを新造せず、#720のTTS production connectionのprovider、voice、
 policyを選ばない。#709は将来、#720のTTS connectionとこのOwner connectionを同じproduction factory
 から消費するが、両者の所有権を混合しない。
 
