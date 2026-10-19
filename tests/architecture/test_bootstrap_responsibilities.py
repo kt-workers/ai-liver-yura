@@ -110,3 +110,22 @@ def test_config_resource_io_and_revision_check_are_outside_bootstrap() -> None:
         if isinstance(node, ast.FunctionDef)
     }
     assert {"read_core_resource", "match_core_reference"} <= declared
+
+
+def test_bootstrap_depends_on_canonical_clock_and_memory_contracts() -> None:
+    files = (
+        "app/bootstrap/system_cognition_configuration.py",
+        "app/bootstrap/core_components.py",
+        "app/bootstrap/speech_production_configuration.py",
+        "app/bootstrap/speech_deployment.py",
+    )
+    for relative in files:
+        source = (ROOT / relative).read_text(encoding="utf-8")
+        assert "from app.infrastructure.scheduling import RuntimeClock" not in source
+        assert "from app.infrastructure.persistence.memory_binding" not in source
+    for relative in files[:3]:
+        source = (ROOT / relative).read_text(encoding="utf-8")
+        assert "from app.runtime.kernel import RuntimeClock" in source
+    for relative in files[2:]:
+        source = (ROOT / relative).read_text(encoding="utf-8")
+        assert "from app.usecases.memory_persistence import CoreMemoryPersistenceBinding" in source

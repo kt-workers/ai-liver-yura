@@ -48,12 +48,12 @@ from app.domain.speech_semantics.planner import (
     descriptor as semantics_descriptor,
 )
 from app.domain.speech_semantics.production import SpeechSemanticPolicyOwner
-from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
-from app.infrastructure.scheduling import RuntimeClock
+from app.runtime.kernel import RuntimeClock
 from app.infrastructure.speech_presentation.supervisor import SpeechPresentationWorkerSupervisor
 from app.usecases.brain_integration_runtime import BrainIntegrationWork
 from app.usecases.cognition_delivery import CoreCognitionDelivery
 from app.usecases.input_reference_context_facade import CoreInputReferenceContextBinding
+from app.usecases.memory_persistence import CoreMemoryPersistenceBinding
 from app.usecases.ports.llm import LLMRolePort
 from app.usecases.presentation_notification import CorePresentationNotification
 from app.usecases.speech_pipeline import CoreSpeechContextReaders, CoreSpeechPipeline

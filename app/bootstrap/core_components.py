@@ -11,7 +11,8 @@ from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLI
 from app.domain.character.contracts import CharacterDefinitionDocument
 from app.domain.contracts.semantic_subject import RuntimeSubjectIdentity
 from app.domain.goals import GoalCommitmentStore
-from app.infrastructure.scheduling import RuntimeClock, SystemRuntimeClock
+from app.infrastructure.scheduling import SystemRuntimeClock
+from app.runtime.kernel import RuntimeClock
 from app.usecases.accepted_inputs import CoreAcceptedInputStore
 from app.usecases.brain_input_meaning import InputMeaningBrainModulePort
 from app.usecases.brain_integration_runtime import BrainIntegrationRuntime

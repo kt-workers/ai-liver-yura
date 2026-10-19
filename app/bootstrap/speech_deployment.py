@@ -59,7 +59,7 @@ from app.domain.semantic_verification.verifier import (
 from app.domain.speech_performance.policy import yura_revision_1_policy
 from app.domain.speech_semantics.planner import SpeechSemanticsPolicy
 from app.domain.speech_semantics.production import SpeechSemanticPolicyOwner
-from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
+from app.usecases.memory_persistence import CoreMemoryPersistenceBinding
 from app.usecases.speech_preparation import finish_cleanup
 
 SPEECH_PROVIDER_ROLE_IDS = (

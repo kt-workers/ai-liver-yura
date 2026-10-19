@@ -31,8 +31,8 @@ from app.config.core_contracts import (
     CoreConfigurationError,
     CoreFailureCode,
 )
-from app.config.executive import load_executive_config
 from app.config.core_resources import match_core_reference, read_core_resource
+from app.config.executive import load_executive_config
 from app.config.llm_connections import load_llm_connections
 from app.domain.activity_binding import ActivityBindingAuthority
 from app.domain.activity_execution import ActivityExecutionAuthority
@@ -51,7 +51,7 @@ from app.infrastructure.llm.connection_registry_factory import (
     create_llm_connection_registry,
 )
 from app.infrastructure.llm.connections import route_llm_connections
-from app.infrastructure.scheduling import RuntimeClock
+from app.runtime.kernel import RuntimeClock
 from app.usecases.core_lifecycle import stop_core
 from app.usecases.input_reference_context import CoreInputReferenceContextBinding
 from app.usecases.lifecycle import ApplicationLifecycle
@@ -91,7 +91,9 @@ async def compose_core(
             raise CoreConfigurationError(CoreFailureCode.ACTIVATION_FAILED)
         runtime = config
         character_ref = config.character_definition
-        character = load_character_definition_yaml(read_core_resource(resource_root, character_ref.resource_ref))
+        character = load_character_definition_yaml(
+            read_core_resource(resource_root, character_ref.resource_ref)
+        )
         if (character.character_id, character.definition_revision) != (
             character_ref.character_id,
             character_ref.definition_revision,
