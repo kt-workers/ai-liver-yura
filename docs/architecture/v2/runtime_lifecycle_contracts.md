@@ -80,16 +80,16 @@ Shutdownはresource dependencyを守る。特にPersistenceを利用するfinal 
 
 ## 5. Startup / reconnect
 
-- optional dependency unavailableでもminimum Coreが成立する場合はdegraded起動を許可する。
+- 任意の外部Provider/Output/PersistenceがUnavailableでも、完全な論理Coreの**全必須OwnerとPort**が成立する場合はdegraded起動を許可する。Owner欠落による部分起動を成功扱いしない。
 - reconnectはdependency単位で行い、Core global startupを再実行しない。
 - new provider/subsystem generationへold in-flight resultを適用しない。
 - #359 rehydrationはPersistence decode後に各Domain ownerがvalidate/applyする。generic `set_state`をLifecycleが行わない。
 
-### 5.1 本番S2 CLIの開始と停止
+### 5.1 唯一の標準製品CLIの開始と停止
 
-#729の`python -m app --s2-production`は、明示S2の構築完了後に既存`S2ProductionApplication.start()`を一度だけ呼ぶ。`SIGINT`と`SIGTERM`は停止要求へ統合し、`stop()`を必ず呼んでS2 wrapperの既存所有台帳に従う。開始失敗、取消、停止失敗でもminimum起動へfallbackせず、停止済みS2 instanceを再開始しない。
+`python -m app`は[統合本体アーキテクチャ](unified_core_architecture.md)の全必須Owner構築と公開検査の完了後、同じCore Runtimeを一度だけ開始する。`SIGINT`と`SIGTERM`は停止要求へ統合し、`stop()`を必ず呼んで既存の資源所有台帳に従う。開始失敗、取消、停止失敗でも構成を縮小してfallbackせず、停止済みinstanceを再開始しない。
 
-CLI自身は具体Provider、TTS、Presentation、Body、Persistenceをclose又は再実装しない。CoreとS2 wrapperが所有する資源は既存の逆順回収に委ね、起動rootが借用したOwnerを終了しない。表示する診断は安全な起動結果だけとし、credential、DSN、endpoint、provider例外原文を出力しない。
+CLI自身は具体Provider、TTS、Presentation、Body、Persistenceをclose又は再実装しない。起動rootとRuntimeが所有する資源は既存の逆順回収に委ね、借用したOwnerを終了しない。表示する診断は安全な起動結果だけとし、credential、DSN、endpoint、Provider例外原文を出力しない。
 
 ## 6. 検証
 
@@ -112,3 +112,13 @@ RuntimeCoordinatorが実行taskを生成した後、そのcoroutineの最初の�
 実行taskの終了callbackは、taskが取消済みであり、同じ実体が実行管理記録にまだ登録されている場合に限り、laneのin-flight件数、実行task・入力の管理記録、取消tokenを一度だけ回収する。handlerは呼ばず、CANCELLED結果を一度だけ公開し、laneを起こす。通常完了や実行開始後の取消でfinallyが回収済みなら、callbackは再回収・結果の重複公開を行わない。
 
 この契約は通常のcancel、再取消、shutdownからの取消に共通する。stopの成功条件は既存どおり所有task、待ち行列、in-flight、取消tokenの残存がないことであり、回収不能を成功へ読み替えない。認知・活動等の利用側へtask管理責務を移さない。
+
+---
+
+## 関数状態の読取と起動・終了
+
+[自律人格契約](autonomous_character_contracts.md)の単一製品構成と[内部状態の時間関数契約](internal_state_trajectory_contracts.md)を適用する。時刻指定の純粋readはRuntimeの新しい同期LLM待ち・DB待ち・global lockを作らず、非直列の認知・発話・Body・Reflectionを継続させる。定期的な発話義務を生成しない。
+
+関数方針・確定anchor・状態履歴を使う再起動の現在値復元は、Appraisal/Internal State Ownerが明示したrestart-safe schemaと再構築検証が採用されるまでは**不許可**とする。過去データを読めることと現在状態へ復元できることを混同しない。保存・再接続失敗を隠してfreshな復元成功にしない。
+
+停止時はOwnerが承認したdurable snapshotだけを既存Persistenceが開いている間に回収する。未承認のTemporal Viewや推測した未来状態、未提示発話は保存済み事実にしない。
