@@ -499,3 +499,15 @@ policyとgeneration/expiry fenceが所有し、#721は`created_at`から再計�
 Authorityにしない。stale、generation mismatch、runtime expiry、型不一致は出力readerを呼ばずに既存の
 candidate拒否・回収経路へ渡す。#720のTTS production connection、provider、voice、policyの選択とfallbackは
 この要求にも#721にも持たせない。
+
+---
+
+## 自律的な連続発話と沈黙の受入補足
+
+[自律人格・行動契約](autonomous_character_contracts.md)の発言/沈黙要件を適用する。Speechを周期駆動のテキスト生成器へしない。Executiveが発話意図を確定した場合だけ正規のSpeech Semantics/Character/Verifier/Performance/Presentationに進む。
+
+話したい意図が続く場合、前の発話Aの再生中にも次のExecutive/意味計画/発話B準備を開始でき、準備・出力条件が整った時はA終了からB開始の提示間隔を**1秒未満**にする。ただし間隔が固定された発話タイマーを設けず、不要なら沈黙を選ぶ。再生中の後続候補も提示前のcurrentness・割込・cancel・queue上限・出典・実行事実を検証する。
+
+Internal Stateの時刻別関数投影や生のEmotion/Desire/Drive値をCharacter Languageへ直送して発言意味を再判断させない。[時間関数契約](internal_state_trajectory_contracts.md)に従い、Executiveで判断し、Speech Semanticsで確定した意味とCharacterの表現制約を下流へ提供する。
+
+TTS/Presentation/Avatar未接続でも本体のSpeech意味Ownerは構成必須。テキスト候補生成と実際の音声/画面提示の成功は別の事実であり、Provider不在を成果成功へ変換しない。
