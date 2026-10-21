@@ -362,3 +362,13 @@ Role分離しても別API callを毎回直列に行う必要はない。
 
 #319 actual Projects v2 mutationは実行環境制約で別途Blocked管理する。
 Product implementationはユーザー確認前に開始しない。
+
+---
+
+## 自律意識判断への時間的な状態根拠
+
+[自律人格・行動契約](autonomous_character_contracts.md)と[時刻別内部状態契約](internal_state_trajectory_contracts.md)を適用する。Appraisal LLMは評価/状態変更の**候補**を返すだけ、Reducerがcurrent stateを確定、Executive LLMが人格・Memory・Goal・Situation・Attentionと現在値/推移/原因を照合してGoal/Action/発話/沈黙を選ぶ。
+
+固定値閾値で発話を選ぶif文、状態値の高中低プリセット、周期テキスト生成を意思判断の代わりにしない。Character Language LLMは発話意味計画を自然な言語へ実現するRoleであり、raw数値・時間関数から「何を言うか」を決め直さない。
+
+各Roleの独立性、post-await freshness、短いcommit fence、bounded schedulingを維持し、前の提示完了による次のExecutive/LLM呼出しの直列化を禁止する。
