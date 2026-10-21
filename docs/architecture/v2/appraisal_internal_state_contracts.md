@@ -226,3 +226,15 @@ LLM待機中にstaleになった候補はReducerへ渡す前に拒否する。�
 ## #690の本番構成参照
 
 Deep Appraisal実行方針、fresh-start初期化方式、Decay具体規則と構成世代の値の正本は[Appraisalの本番構成](appraisal_production_configuration.md)とする。既存の意味・Reducer Authority・式・現在性を変更せず、ここへ具体値を重複定義しない。同文書は設計レビュー待ちであり、resource・loader・factoryの実装や本番採用は未完了。
+
+---
+
+## 時間関数による状態投影の正本補足
+
+[内部状態の時間関数契約](internal_state_trajectory_contracts.md)を採用する。九系統facetの各値・前値・delta・原因・時刻とReducer唯一のmutation Authorityを保ったまま、確定anchorとversionedな変化方針を明示的なas_ofで評価する。
+
+時刻別の`TemporalFacetProjection`と`InternalStateTemporalView`は非確定read modelである。既存`InternalStateSnapshot`への上書き、revision増分、Goal/Actionの暗黙確定を行わない。存在しないfacetを0とみなさず、根拠のない個体baselineを生成しない。
+
+関数評価値をStateへ反映する場合は必ず既存`AppraisalCandidate`/`StateDeltaProposal`→`InternalStateReducer`のcommit gateを通し、同じ経過時間の二重減衰を防ぐ。fast/deep LLM、state/source revision、post-await freshnessと局所的なatomic mutationを維持する。
+
+Character Languageは本read modelをraw入力として再解釈しない。Executiveへの投影は正規の型付き入力と世代検査に従う。
