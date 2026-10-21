@@ -151,3 +151,15 @@ Production Compositionは有効なpolicyを明示注入する。policy全体がm
 ## #690の本番構成参照
 
 Deep Appraisal実行方針、fresh-start初期化方式、Decay具体規則と構成世代の値の正本は[Appraisalの本番構成](appraisal_production_configuration.md)とする。既存の意味・Reducer Authority・式・現在性を変更せず、ここへ具体値を重複定義しない。同文書は設計レビュー待ちであり、resource・loader・factoryの実装や本番採用は未完了。
+
+---
+
+## 時刻指定の純粋関数評価と確定状態の分離
+
+[時間関数契約](internal_state_trajectory_contracts.md)の`read_at(as_of, committed_snapshot, policy)`は、本書のexact rule優先、半減期、最小経過時間、指数式、finite/value boundsを再利用する**読取専用投影**である。
+
+読取結果は減衰proposalのcommit成功を意味せず、snapshot revisionとanchorを変更しない。後から既存Decay proposalをReducerにcommitした場合、その新anchorから評価し直して同一経過時間を二重適用しない。
+
+rule未定義のDesire/Drive/Motivation/Value/Interest/Relationship/Energyを無断で減衰させない。適合ruleなしでは既存のmissing-rule診断を保ち、非確定read viewで値を保留しても自然変化が実証済みであるとは主張しない。policy全体がないときはtyped failureのまま扱う。
+
+本書のStartup/Resumeに示す式は、Internal State Owner自身がrestart-safeな復元を**明示承認した場合のみ**候補として利用できる。保存値があることは復元許可を意味しない。[永続化契約](persistence_repository_contracts.md)の初期禁止を維持する。
