@@ -121,3 +121,12 @@ D1〜D9は2026-08-23にPASS。D10は2026-08-31に実装決定可能性・デー�
 #549でV1 blocking contamination 0を確認した後、#550でD10が要求したOpen/Closed全V2 Issue・PR・branch・Human VerificationのPost-D10 state reconciliationを実施した。current execution順は`production_plan_current.md`を参照する。
 
 `project_sync_manifest.md`のProject #6情報は履歴資料でありcurrent Authorityではない。current Project日程AuthorityはProject #7 `プロジェクトゆらv2`。Project #6は変更しない。
+
+---
+
+## 自律人格・内部状態関数の追加正本
+
+- [`autonomous_character_contracts.md`](autonomous_character_contracts.md) — 完全体の自律人格・七層構造・九系統・発話/沈黙/Body・単一製品起動・全pytest上限1,000件の製品契約。
+- [`internal_state_trajectory_contracts.md`](internal_state_trajectory_contracts.md) — 確定状態と時間関数の読取投影、状態更新と二重減衰防止、Executive入力、保存/Owner復元許可の詳細契約。
+
+本索引の旧資料に含まれる人物固有名・段階識別子・旧構成APIは現行の命名・起動基準ではない。正規の人物・schema識別子への改名はコード/設定/ドキュメントの整合する移行として検証する。
