@@ -108,3 +108,15 @@ factoryは未構成LLMを既存typed unavailableとして通すが、configured 
 取得はLLM lease、必要なTTS lease、Presentation leaseを非同期で完了して`SpeechProductionPorts`を返す第一段階と、#702が同一統合本体のcognition / referenceを確定して`CoreSpeechConfiguration.build`内でreader / notificationを同期結合する第二段階に分ける。第二段階のresolverは構成ハンドルごとに一度だけ#721 connectionを解決して固定し、readerと全notificationは固定済みconnectionだけを使う。未結合、二重結合、別cognition / reference / runへの再結合は拒否し、同期結合中に非同期資源を新規取得しない。いずれかの取得・検証・取消に失敗した場合、既取得のowned leaseを逆順に全て一度ずつsettleしてから元の失敗又は取消を伝播する。cleanup failureは全回収試行後に固定の安全な診断として残すが、元の失敗又は取消を置換せず、成功又は通常の構成成功へ変換しない。返却後のpipeline / Runtime所有権移管は#702の`SpeechProductionBinding`に委譲し、borrowed Ownerをfactoryが終了しない。
 
 この境界の結合回帰は、`production_speech_deployment_registry`から登録済みの本番factoryを解決し、`create_speech_deployment()`が返す未取得の`inputs`を一度だけ`build_core(speech=...)`へ渡して確認する。configured / unconfiguredの両方で、#726のProvider用Role/config/binding/modeは`CoreProviderLeaseFactory`だけに渡り、`SpeechProductionPorts.roles`と#702の完全比較には`SpeechProductionPublication.roles()`のDomain用Roleだけが渡る。configuredのProvider wireは#706の既存経路で一度だけDomain portへ復元され、unconfiguredは既存のtyped unavailableを維持する。構築中に外部合成・提示を開始せず、返却済み資源は既存の停止・release経路で回収する。
+
+---
+
+## 可変人物定義・関数方針と単一製品構成
+
+[自律人格と統合本体](autonomous_character_contracts.md)で採用した、人物固有名・性格・言葉遣い・声・身体スタイル等の設定値への分離を全Ownerへ適用する。安定した人格6層はCharacter Definitionを正本とし、現在の内的状態（第7層）をCharacter Profileに保存しない。同じ設定rootで人物とRuntimeのidentity/revisionを明示して照合する。
+
+内部状態の関数種類・パラメータ・半減期・baselineは[時刻別内部状態契約](internal_state_trajectory_contracts.md)と採用済みOwnerのversioned policyが所有し、勝手なデフォルトやファイルに置いた任意Pythonコードでは生成しない。未定義のfacet別規則を補作しない。
+
+現行の設定schema・Profile識別子の人物固有名は、今後の**設定schema版の明示移行対象**である。既存ファイル名とschemaをドキュメントだけで別名へ変更して実装不整合を作らない。新しい中立識別子への移行時はloader・config・Character Definition・provider binding・テストを同一変更で整合させる。
+
+`speech: null`等の外部提示設定の無効化が、統合本体のSpeech意味Owner省略を意味する設計にはしない。製品起動は単一rootの完全構成を要求する。
