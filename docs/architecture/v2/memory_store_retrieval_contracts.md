@@ -766,3 +766,13 @@ ID 55 → 検索集合56 → policy57 → index58の全順序に従う。index58
 検索集合1＋policy1（semantic index使用時はさらに1）に、必要なID token・他Owner・targetを加え、既存16 participant上限で検査する。上限超過時にtokenを落としたり上限を拡張したりしない。
 
 PostgreSQLの同一storage namespaceのRepository間では既存#664 registryを共有し、検索participantも同じregistryで同期する。Persistence runtimeとCoreMemoryPersistenceBindingは既存executor・受付上限・取消後回収・停止処理から現在公開を提供する。新executorや別MemoryStoreを作らない。#614のconsumer wiringは本Workで変更しない。
+
+---
+
+## 関数管理の現在状態と過去記憶の境界
+
+[時間関数契約](internal_state_trajectory_contracts.md)による状態anchor・履歴・時刻別投影の追加は、Memoryから過去のEmotion/Desire/Relationship値を直接現在状態へ復元する権限を生まない。
+
+Memoryは信頼済みの出来事と出典を保存・提供できるが、現在状態の計算/確定/復元を所有しない。Memory evidenceをAppraisalへ渡して新しいstate deltaを評価するかどうかは既存Ownerの権限に従う。
+
+Memory検索結果を関数の時間軸に直接挿入して未観測の連続的な現在感情を捏造しない。個体baselineは根拠・契約の確定後だけ参照可能とする。
