@@ -848,3 +848,15 @@ Attention/source/currentnessは§29・§31・§35の公開契約をそのまま�
 ### 36.3. Test/Fixで確認した配線不具合
 
 背景queue拒否時、Runtimeはsubmit内で同期terminal通知を行い、Reflection配送のobserverが受付記録を回収する。submit復帰後の拒否処理や例外処理も同じ記録を回収するため、Compositionの回収は冪等にし、元の型付き拒否・例外をKeyErrorで置換しない。これはINTEGRATION_WIRING_DEFECTの修正であり、Runtimeの容量・終端規約、Reflectionの意味判断・保存方針は変更しない。
+
+---
+
+## 時間的内部状態から自律判断・出力へ接続する
+
+[自律人格契約](autonomous_character_contracts.md)と[時間関数契約](internal_state_trajectory_contracts.md)を統合Brainの正本補足とする。入力なしのInternal State変化、Memory関連性、Goal、Activity、Lifecycleがtyped triggerとなり、Attention eligibility→Executiveへ進む。時計のtickのみを新しい発話義務には変換しない。
+
+Appraisal/Reducerの確定状態と関数policyをread-onlyに一貫取得し、単一の`as_of`で評価した時間文脈をExecutiveのtyped bounded snapshotへ含める。read自体は新しいState確定や暗黙のDecay commitではない。新しいState改変は必ず既存Reducerで確定する。
+
+Executiveがrespond/act/wait/ignore/defer/silence等を選択した後、Speech/Body/Goalの各Ownerへhigh-level intentをファンアウトする。発話再生・TTS・DB・Bodyの完了待ちは次の思考・自律triggerの受付を停止しない。変化したsource/state/policy世代に旧決定を無条件付け替えず、各Ownerで現在性を確認する。
+
+関数の現在値を固定カテゴリへ丸めて発話や沈黙を判定する新Ownerを導入しない。判断の根拠と実際に発生したSpeech/Body/Memoryの結果を別のtraceとして観測する。
