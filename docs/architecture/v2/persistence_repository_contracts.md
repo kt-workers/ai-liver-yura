@@ -732,3 +732,15 @@ production DB本体を試験DBとして使用しない。#713のfixtureは同じ
 CoreMemoryPersistenceBinding.read_semantic_assertion_publicationは、既存submit_semantic_assertion_publication(...).wait()へ委譲する非同期public入口とする。同じPostgresPersistenceRuntimeの実Memory Ownerを利用し、private _memoryの取得や別MemoryStoreAuthorityの生成を必要としない。新しいexecutorやDB poolを作らず、既存の上限・失敗・取消後回収・shutdown契約を保つ。
 
 Speech source取得は選択済みMemory IDと期待するリビジョンだけを渡す。persistence failureを空の正常publicationへ置換しない。I/Oは既存executorで実行し、待機中にDomain/global cognition lockを保持しない。source ID registryやin-flight Speechを永続化対象へ追加しない。
+
+---
+
+## 関数ベース内部状態の保存候補とOwner別復元承認
+
+[時間関数契約](internal_state_trajectory_contracts.md)に新しい論理保存候補`InternalStateTrajectorySnapshot`を定義する。確定anchor、採用された関数policy identity/revision、必要な有限のcause/provenance、owner state revision、captured_at、runtime_epoch、schema/version、digestを同じ既存`PersistenceSnapshotEnvelope`境界で扱う。
+
+本書§5の「Emotion等の現在snapshotは明示したowner契約がない限りrestart-safeでない」という禁止を維持する。新しい候補の保存可否と復元可否は別であり、**現時点の関数方式の採用だけでは復元権限は発生しない**。Domain Ownerがschema整合、時刻、政策世代、因果、破損、旧世代を検証・明示承認した場合だけcurrent stateへ再構築可能とする。
+
+復元不許可なら過去記録を現在状態にしない。復元要求の失敗を自動fresh成功に読み替えない。明示的fresh startでは既存空facet/revision0を使用し、DB再接続中の暫定stateで古い保存状態を上書きしない。任意のPythonコード・関数オブジェクト・pickleを保存・実行しない。
+
+保存頻度、圧縮、履歴容量、owner側のrestart-safe承認条件は別途確定すべき契約上の留保であり、架空の既定値を追加しない。
