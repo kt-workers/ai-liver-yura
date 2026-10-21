@@ -467,3 +467,15 @@ MeaningPolicy V1の採用値はFACT_GROUNDED / 1 / 1。GRATITUDEのevidence要�
 ## 本番構成の供給境界（#691）
 
 実行方針・Requirements規則の初期採用値、厳密loader、不変DTO、factory、由来は[Executiveの本番構成](executive_production_configuration.md)を正とする。本書の意味・世代・最終Fenceと§9.9 / §11.1を維持し、具体的なProvider mappingとS2登録は#692 / #360が所有する。
+
+---
+
+## 時間関数由来の内部状態を判断材料とする追加契約
+
+[時間関数契約](internal_state_trajectory_contracts.md)が定める時刻指定の`InternalStateTemporalView`を、既存`ExecutiveContextSnapshot.internal_state`（確定snapshot）とは別のtyped入力として加える。`as_of`、投影値、変化方向と確定原因、state revision、policy generation、view identityを同じ有界snapshotに束縛する。
+
+これは既存`executive.context.v2`へ黙ってfieldを追加する変更ではない。製品実装時に互換でない明示schema世代を登録し、serializer、Role instructions、Provider parser、commit gateの対応を揃える。実装済みの宣言ではない。
+
+LLMが人格・Memory・Goal・Attention・Situationと時間的文脈から行動/発話/沈黙を選ぶ。`projected_value > threshold`による固定発話ルールを設けない。関数から未観測経験や個体の通常値を補作しない。
+
+既存4-revision stampとcurrentness/fenceを維持し、追加のpolicy世代変更と意味上必要な投影の現在性も検証する。ただし時刻が経過しただけで全ての判断候補を毎瞬間無制限に失効させない。時間有効性の数値は未確定であり、実装が推測で埋めない。
