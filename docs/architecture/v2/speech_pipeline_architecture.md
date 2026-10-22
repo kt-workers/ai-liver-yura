@@ -220,6 +220,16 @@ B prepared ≠ B must be spoken。
 
 ---
 
+### 発話・沈黙・身体と非直列実行
+
+- 発言意図を確定した場合、Speech Semantics→Character Language→検証→Performance/TTS/Presentationの各責務を維持する。実際に提示された範囲だけを提示済み事実として記録する。音声出力がない場合も意味生成Ownerを削除しない。
+- **発話Aの再生終了を、次のAppraisal/Executive/Speech B準備開始の条件にしない。** independent lane/queueにより先行準備し、旧候補の取消、現在性再検証、interrupt/fairness/backpressureを行う。
+- 会話が盛り上がり、次の発言が必要と判断され、出力準備が間に合う環境では、発話Aの終了から発話Bの開始まで**1秒未満**を実現する。固定の発話間隔を設定する要件ではなく、実測で判定する。
+- 発話意欲が低い等の文脈では、長時間または継続的な沈黙を選べる。連続発話と沈黙を二つの固定モードにはしない。
+- Speech/BodyはExecutiveからの兄弟経路であり、Character言語化の完了がBody意図の開始条件とは限らない。Bodyは意図・表現傾向・物理制約から連続動作を生成し、装置不在を実動作成功へ読み替えない。
+- LLM、TTS、描画、Body、DB、Reflectionの待機は無関係な認知を止めない。資源上限はbounded queueで管理し、global async lock/serial loopでLLM全体を待たない。古い候補はOwnerごとのrevision/generationで拒否する。
+- すべてのLLMで実際に1秒以内の応答を保証するという意味ではない。資源不足と内部の直列待ちを区別し、遅延を計測可能にする。
+
 ## 9. PreparedSpeechCandidate
 
 ```text

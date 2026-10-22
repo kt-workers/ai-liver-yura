@@ -83,6 +83,14 @@ LLMに「考えさせること」と、正本State/Factを「所有させるこ�
 
 ---
 
+### 自律意識判断への時間的な状態根拠
+
+[自律人格・行動契約](unified_core_architecture.md)と[時刻別内部状態契約](appraisal_internal_state_contracts.md)を適用する。Appraisal LLMは評価/状態変更の**候補**を返すだけ、Reducerがcurrent stateを確定、Executive LLMが人格・Memory・Goal・Situation・Attentionと現在値/推移/原因を照合してGoal/Action/発話/沈黙を選ぶ。
+
+固定値閾値で発話を選ぶif文、状態値の高中低プリセット、周期テキスト生成を意思判断の代わりにしない。Character Language LLMは発話意味計画を自然な言語へ実現するRoleであり、raw数値・時間関数から「何を言うか」を決め直さない。
+
+各Roleの独立性、post-await freshness、短いcommit fence、bounded schedulingを維持し、前の提示完了による次のExecutive/LLM呼出しの直列化を禁止する。
+
 ## 4. Request / Revision Contract
 
 long-running requestは責務上必要なrevisionを持つ。

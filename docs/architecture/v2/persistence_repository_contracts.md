@@ -165,6 +165,32 @@ Historical evidence may be remembered through #332, but that is not equivalent t
 
 ---
 
+### 内部状態アンカーの保存・復元許可
+
+現行[Persistence](persistence_repository_contracts.md)§5でEmotion等の現在snapshotは**restart-safeとして承認されていない**。本設計はその禁止を自動解除しない。
+
+新しいOwner固有の保存候補（未実装）は以下。
+
+```text
+InternalStateTrajectorySnapshot
+- snapshot_schema_id/version
+- owner_identity / state_revision / source_context_revision
+- captured_at / runtime_epoch
+- canonical_committed_anchors[]
+- evolution_policy_identity/revision
+- bounded_committed_change_provenance[]
+- integrity digest / relevant source references
+- restore_policy: historical_only | validated_restart_safe
+```
+
+- 保存Adapterは既存`PersistenceSnapshotEnvelope`のpayload/digest、version、epoch、complete transactionを検証する。任意Python object、pickle、実行関数を復元しない。
+- Internal State Ownerがrestore可否、時刻、anchor・state revision、policy世代、因果出典、schemaと完全性を再検査し、**明示承認された場合のみ**新runtime epochに採用する。Persistence Adapterは独自に`set_state`しない。
+- 停止中の時間は採用済みDecay policyによる評価候補として扱い、過去の状態を現在の値へ無条件コピーしない。
+- 復元契約未承認・旧版不整合・破損は現在値として採用不可。明示的な新規起動は空facet/revision0の初期化規則を使用し、復元失敗の要求を黙って新規起動成功に置き換えない。
+- DB不在・復元失敗後の暫定運転は非永続・degradedであることを示し、DB復旧時の古い保存データと暫定現在状態を無許可で合体/上書きしない。
+- Character Definitionの世代変更をまたぐ基準値やanchorの意味は明示migration契約がある場合だけ継続する。通常状態のbaselineをDecoderが推定しない。
+- 保存頻度・圧縮方針・保持容量は未確定。出典と信頼性を消す無制限の圧縮も、無制限の履歴保存も採用しない。
+
 ## 6. RehydrationCandidate
 
 Storage retrieval returns an infrastructure-validated candidate, not applied Domain state.

@@ -417,6 +417,14 @@ past emotion Memory
 
 ---
 
+### 関数管理の現在状態と過去記憶の境界
+
+[時間関数契約](appraisal_internal_state_contracts.md)による状態anchor・履歴・時刻別投影の追加は、Memoryから過去のEmotion/Desire/Relationship値を直接現在状態へ復元する権限を生まない。
+
+Memoryは信頼済みの出来事と出典を保存・提供できるが、現在状態の計算/確定/復元を所有しない。Memory evidenceをAppraisalへ渡して新しいstate deltaを評価するかどうかは既存Ownerの権限に従う。
+
+Memory検索結果を関数の時間軸に直接挿入して未観測の連続的な現在感情を捏造しない。個体baselineは根拠・契約の確定後だけ参照可能とする。
+
 ## 11. Retrieval contract
 
 ### 11.1 MemoryRetrievalQuery

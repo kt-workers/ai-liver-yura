@@ -120,6 +120,15 @@ Pending Goal/Commitment may create an autonomy trigger without user input.
 
 ---
 
+### 外部入力を待たない自律判断
+
+- user inputなしでも Internal Stateの確定変化、Memoryの関連性、Goal/Commitment、Activity結果、観測事実、Lifecycleなどを正規のtyped sourceとしてAttentionへ通知し、Executive判断を開始できる。実行主体は入力待ちで停止しない。
+- time tickを使うこと自体は禁止しないが、一定秒数ごとのテキスト生成や発言義務を設定してはならない。新しい状態・関連性・Goalがなければ無発話が継続してよい。
+- Executiveは入力を必ず応答へ変換せず、respond / act / wait / ignore / defer / refuse / silence / continue_activity等を、人格・状態の時間文脈・Memory・Focus・Situation・能力を根拠に選ぶ。
+- 数値・時間関数から閾値をif文で評価して発言、沈黙、身体行動を確定する別の意思決定器を設けない。Executive LLMの意味判断を唯一のGoal/Action authorityとし、LLM候補も通常のcommit gateで確定する。
+- 主観評価・Attentionによるtrigger適格性・Goal store・Executive判断を混同しない。Attentionは順番/割込可否、Executiveは意思決定、Speech Semanticsは「何を話すか」、Character Languageは「どう言うか」を各々所有する。
+- 発言しなかった場合にも、入力・注意・必要な記憶・沈黙の判断根拠を正規契約に従い扱う。沈黙は失敗や未処理ではない。
+
 ## 5. Input / Meaning / Appraisal flow
 
 External natural-language input:

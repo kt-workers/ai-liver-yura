@@ -4,6 +4,29 @@
 
 旧Minimum Core / S2専用起動に関する資料・Issue・工程の記述は歴史的記録であり、現行の製品起動の指示ではない。現在の実装は`config/`と`app/bootstrap/`を使い、`resources/`や`app/composition/`を復活させない。
 
+## 資料の探し方・正本の優先順位
+
+このディレクトリは独立した136個の設計正本を意味しない。**同じ領域の真実を複数のファイルで再定義せず、既存Ownerの契約を改訂する**。現行の製品構成は[統合本体](unified_core_architecture.md)、検証結果の判定は[受入対応表](unified_core_acceptance_matrix.md)を起点とする。
+
+| 探す内容 | 最初に読む文書・正本の担当 |
+| --- | --- |
+| 製品の完成体、起動、Clean Architecture | [統合本体](unified_core_architecture.md) |
+| 人格の7層とCharacter可変設定 | [人格構造投影](character_psychological_projection_contracts.md)・[心理構造定義](../../character/v2/yura_psychological_structure.md)・[人物設定](../../character/v2/yura_character_bible.md) |
+| 状態の9系統、時間関数、更新・減衰 | [Appraisal/Internal State](appraisal_internal_state_contracts.md)・[Decay数値契約](appraisal_decay_numeric_contracts.md)・[本番方針](appraisal_production_configuration.md) |
+| LLMによる行動・沈黙の判断 | [Executive](executive_authority_contracts.md)・[Brain Integration](brain_integration_contracts.md) |
+| セリフ生成、提示、Body | [Speech Pipeline](speech_pipeline_architecture.md)・[Character](character_language_contracts.md)・[Body](body_architecture.md) |
+| 過去記憶と再起動・復元 | [Memory](memory_store_retrieval_contracts.md)・[Persistence](persistence_repository_contracts.md) |
+| 本番配線・実環境の合否 | [System Integration](system_integration_contracts.md)・[受入対応表](unified_core_acceptance_matrix.md) |
+
+### 正本の保守規則
+
+- **全体構成は統合本体、意味・状態の権限は各Domain Owner、数値・実装方針は明示された対応契約**が所有する。本文で異なる責務をもう一度定義する必要がある場合は、正本への相対参照に留める。
+- `implementation`、`binding`、`d10`、運用記録、旧工程資料は**自動的に新しい正本へ昇格しない**。履歴と現行構成が衝突した場合は、現行の統合本体・各Owner契約を優先し、実装との不一致を未達として扱う。
+- 新しい内容が既存の領域に属するなら**新規の設計書を作らず該当正本を修正**する。独立Ownerで既存文書に置けないことが確認されたときのみ、新規正本の必要性をレビューする。
+- 未掲載資料は下記の検索用索引に加えた。分類はファイル名からの**探索上の暫定分類**であり、各資料の採用・廃止・マージを認定するものではない。
+- 人物固有の旧ファイル名・旧起動方式は履歴上残る。コード/設定/リンクの一貫した移行なしに大量改名・削除しない。現在の正規起動は常に `python -m app`。
+- 2026年8〜9月の工程完了履歴はその時点の記録であり、現行の製品完成・レビュー完了を意味しない。最新の採用判断は当該PR/branchの証拠で判定する。
+
 ## 設計完了・製造順
 
 - **`unified_core_architecture.md` — ゆら本体の唯一の起動構成・フォルダ・責務・受入条件の正本。旧Minimum/S2構成を廃止。**
@@ -121,3 +144,67 @@ D1〜D9は2026-08-23にPASS。D10は2026-08-31に実装決定可能性・デー�
 #549でV1 blocking contamination 0を確認した後、#550でD10が要求したOpen/Closed全V2 Issue・PR・branch・Human VerificationのPost-D10 state reconciliationを実施した。current execution順は`production_plan_current.md`を参照する。
 
 `project_sync_manifest.md`のProject #6情報は履歴資料でありcurrent Authorityではない。current Project日程AuthorityはProject #7 `プロジェクトゆらv2`。Project #6は変更しない。
+
+## 旧索引で未掲載だった専門資料
+
+既存索引の参照漏れ47ファイルを、追加の設計書を作らずここへ収録する。主正本を置き換える指示ではない。
+
+### 廃止した製品起動構成・履歴参照
+
+- [`minimum_brain_production_configuration.md`](minimum_brain_production_configuration.md)
+- [`system_production_cognition_configuration.md`](system_production_cognition_configuration.md)
+
+### 専門契約・本番方針（各Ownerの補足）
+
+- [`appraisal_production_configuration.md`](appraisal_production_configuration.md)
+- [`character_definition_resource_location_contract.md`](character_definition_resource_location_contract.md)
+- [`executive_production_configuration.md`](executive_production_configuration.md)
+- [`goal_commitment_semantic_contracts.md`](goal_commitment_semantic_contracts.md)
+- [`memory_semantic_assertion_contracts.md`](memory_semantic_assertion_contracts.md)
+- [`plan_execution_approval_contracts.md`](plan_execution_approval_contracts.md)
+- [`semantic_subject_identity_contracts.md`](semantic_subject_identity_contracts.md)
+
+### 実装・配線・検証補足（主正本を確認して使用）
+
+- [`attention_policy_lifecycle_d10_binding.md`](attention_policy_lifecycle_d10_binding.md)
+- [`avatar_presentation_implementation.md`](avatar_presentation_implementation.md)
+- [`body_expression_d10_implementation.md`](body_expression_d10_implementation.md)
+- [`body_integration_planner_delay_verification_cadence.md`](body_integration_planner_delay_verification_cadence.md)
+- [`body_integration_post_completion_activation_reconciliation.md`](body_integration_post_completion_activation_reconciliation.md)
+- [`body_integration_post_solver_runtime_binding.md`](body_integration_post_solver_runtime_binding.md)
+- [`body_motion_planning_physical_binding_implementation.md`](body_motion_planning_physical_binding_implementation.md)
+- [`body_physical_numeric_implementation.md`](body_physical_numeric_implementation.md)
+- [`body_realtime_layers_implementation.md`](body_realtime_layers_implementation.md)
+- [`body_solver_controller_implementation.md`](body_solver_controller_implementation.md)
+- [`body_solver_d10_controller_completion.md`](body_solver_d10_controller_completion.md)
+- [`body_solver_post_completion_continuation.md`](body_solver_post_completion_continuation.md)
+- [`body_solver_target_tracking_dynamics.md`](body_solver_target_tracking_dynamics.md)
+- [`brain_integration_implementation.md`](brain_integration_implementation.md)
+- [`character_language_d10_bounds.md`](character_language_d10_bounds.md)
+- [`development_tooling_implementation.md`](development_tooling_implementation.md)
+- [`goal_planning_d10_binding_contracts.md`](goal_planning_d10_binding_contracts.md)
+- [`input_gateway_d10_bounds_implementation.md`](input_gateway_d10_bounds_implementation.md)
+- [`llm_execution_d10_implementation.md`](llm_execution_d10_implementation.md)
+- [`memory_reflection_d10_operational_binding.md`](memory_reflection_d10_operational_binding.md)
+- [`memory_store_retrieval_d10_binding.md`](memory_store_retrieval_d10_binding.md)
+- [`plugin_registry_implementation_alignment.md`](plugin_registry_implementation_alignment.md)
+- [`runtime_lifecycle_d10_binding.md`](runtime_lifecycle_d10_binding.md)
+- [`semantic_verification_d10_bounds.md`](semantic_verification_d10_bounds.md)
+- [`speech_runtime_d10_canonical_binding.md`](speech_runtime_d10_canonical_binding.md)
+- [`streaming_activity_execution_binding.md`](streaming_activity_execution_binding.md)
+- [`streaming_attention_binding.md`](streaming_attention_binding.md)
+- [`tts_provider_d10_operational_binding.md`](tts_provider_d10_operational_binding.md)
+
+### 開発運用・設計監査・Project管理資料
+
+- [`branch_lifecycle_and_commit_hygiene.md`](branch_lifecycle_and_commit_hygiene.md)
+- [`branch_lineage_integrity_contract.md`](branch_lineage_integrity_contract.md)
+- [`commit_hygiene_edge_cases.md`](commit_hygiene_edge_cases.md)
+- [`commit_hygiene_merge_semantics.md`](commit_hygiene_merge_semantics.md)
+- [`commit_message_language_policy.md`](commit_message_language_policy.md)
+- [`design_reconciliation_checkpoint.md`](design_reconciliation_checkpoint.md)
+- [`deterministic_ci.md`](deterministic_ci.md)
+- [`project_v2_management_spec.md`](project_v2_management_spec.md)
+- [`project_v2_sync_manifest.md`](project_v2_sync_manifest.md)
+- [`project_v2_sync_runbook.md`](project_v2_sync_runbook.md)
+

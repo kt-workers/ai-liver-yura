@@ -84,6 +84,33 @@ Numerical rules:
 - `delta == 0.0`（通常の浮動小数点等値）ならno-op proposalを生成しない。
 - timer tick回数、sample数、処理回数をdeltaへ掛けない。同じ`current_value / baseline / elapsed_seconds / half_life`は同じproposalを返す。
 
+### 時刻指定の純粋関数評価
+
+```text
+read_at(as_of, committed_snapshot, active_evolution_policy)
+    -> InternalStateTemporalView
+```
+
+1. `as_of`は呼出し側がRuntimeClockから取得し、timezone-aware値として明示注入する。Domain内で壁時計やLLMを呼ばない。アンカー以前や未観測の未来の出来事を外挿しない。
+2. 最新の確定facet値をanchorとする。適合するVersioned Decay ruleを、既存のexact facet kind/key/target scopeの優先順位で決定する。
+3. ruleがあり必要経過時間を満たす場合、既存の正本指数式だけを使用する。
+4. ruleがなくてもデータを勝手に変化させない。既存の`DECAY_POLICY_RULE_MISSING` diagnosticを保持し、`HELD_NO_RULE`は「最後の確定値を提示、自然変化は未定義」の意味とする。Policy全体の欠落・不正は評価失敗とし、`HELD_NO_RULE`で隠さない。
+5. 最小経過時間未満はアンカー値の投影のみであり、正規Decay proposalは生成しない。評価で得た値を黙ってclampしない。
+6. 同じanchor、policy generation、時刻なら同じ結果を返す。評価不能・非法値・世代不整合は型付き失敗であり、暗黙の別公式による修復を行わない。
+
+既存の関数式は次を**そのまま継承する**。
+
+```text
+elapsed_seconds = max(0, as_of - anchor.committed_at)
+factor = 2 ** (-elapsed_seconds / rule.half_life_seconds)
+projected_value = rule.neutral_baseline
+                  + (anchor.committed_value - rule.neutral_baseline) * factor
+```
+
+採用済み初期規則は Emotion(global/targeted)半減期300秒、Arousal(global/targeted)半減期120秒、baseline=0、minimum elapsed=1秒。これらは[本番構成](appraisal_production_configuration.md)における初期**校正値**であり、人間心理の実測最適値と主張しない。
+
+Desire、Drive、Motivation、Value、Interest、Relationship、Energyには本番初期方針の自動Decay ruleが**ない**。そこへ減衰や回復の式を推測で追加しない。人格Traitを値へ一対一変換しない。
+
 ## 5. Proposal provenance
 
 Decay由来`StateDeltaProposal`は通常の#327 schemaに加え、少なくとも次のprovenanceを保持する。

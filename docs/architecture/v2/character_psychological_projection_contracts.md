@@ -49,6 +49,29 @@ Character causal structure (Layers 1-6)
 
 Character Definitionは反応結果のAuthorityではなく、その反応が生じやすくなる原因側evidenceを提供する。
 
+### 七層人格と九系統の現在状態
+
+人格の理論的背景は既存の心理構造資料に記されたRothbart/Ahadi (1994)、Mischel/Shoda (1995)、McAdams/Pals (2006)、Fleeson/Jayawickreme (2015)を**参考枠**として採用する。AI心理の実証済み法則とみなさない。
+
+| 層 | 人格構造 | Authority |
+| --- | --- | --- |
+| 1 | 本質的傾向 | 比較的安定した人物設定 |
+| 2 | Deep Prior | 設定由来の深層傾向。生物学的事実とLoreを区別 |
+| 3 | 形成経験・バックボーン | 人物設定の形成史。実際の観測経験とは別 |
+| 4 | 信念・価値観 | 比較的安定した意味・評価傾向 |
+| 5 | 自己モデル・物語的自己 | 自己理解。未確認の実行能力を捏造しない |
+| 6 | 特徴的な適応傾向 | 場面に応じた反応可能性。固定反応ではない |
+| 7 | 現在状態・Situation・意味づけ | Runtimeの各正規Ownerが保持する動的事実 |
+
+層1〜6はCharacter Definitionから読み取り専用に投影し、層7を静的Profileへコピーしない。形成根拠参照は説明可能性を担保するが、機械的な行動決定規則ではない。
+
+内部状態の9系統は Emotion、Desire、Drive、Motivation、Value/Moral appraisal、Interest/Curiosity、Relationship、Energy、Arousal。対象付きInterest/Relationship、cause・confidence・revision・updated_at・出典等は[Appraisal/Internal State](appraisal_internal_state_contracts.md)の型付き契約を保持する。
+
+- Appraisalは出来事・現在状態・Goal・Relationship・Memoryなどを評価して候補を生成し、Reducerのみが現在状態を確定する。
+- 状態の数値は時点の観測/確定値であり、心理状態の全情報ではない。確定した基準点・原因・時間的推移の**関数投影**は[時間関数契約](appraisal_internal_state_contracts.md)で定める。
+- Emotion→特定のセリフ、Fear→逃走、喜び→必ず発話、といった一対一の定型対応を禁止する。安全・権限判定をValue/Moral stateへ委譲しない。
+- 記憶の過去感情は現在状態ではなく、人物設定の安定した特性は現在感情の捏造根拠にはならない。
+
 ## 3. Static / dynamic boundary
 
 ### 3.1 Character Definition側に置くもの

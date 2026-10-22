@@ -6,6 +6,16 @@
 
 変更可能な設定はファイルで管理する。通常編集する主設定、詳細をまとめるProfile、内部管理値を分離する。Systemは既存Ownerの公開DTOと登録を構築するだけで、Domainの意味、instructions、schema、規則選択を所有しない。Brain / Body / Memoryもこの境界へ従うが、既存Owner設定の全移行は要求しない。GUI/Adminは許可された安全な投影だけを表示し、設定やsecretの別Authorityにならない。
 
+### 可変人物定義・関数方針と単一製品構成
+
+[自律人格と統合本体](unified_core_architecture.md)で採用した、人物固有名・性格・言葉遣い・声・身体スタイル等の設定値への分離を全Ownerへ適用する。安定した人格6層はCharacter Definitionを正本とし、現在の内的状態（第7層）をCharacter Profileに保存しない。同じ設定rootで人物とRuntimeのidentity/revisionを明示して照合する。
+
+内部状態の関数種類・パラメータ・半減期・baselineは[時刻別内部状態契約](appraisal_internal_state_contracts.md)と採用済みOwnerのversioned policyが所有し、勝手なデフォルトやファイルに置いた任意Pythonコードでは生成しない。未定義のfacet別規則を補作しない。
+
+現行の設定schema・Profile識別子の人物固有名は、今後の**設定schema版の明示移行対象**である。既存ファイル名とschemaをドキュメントだけで別名へ変更して実装不整合を作らない。新しい中立識別子への移行時はloader・config・Character Definition・provider binding・テストを同一変更で整合させる。
+
+`speech: null`等の外部提示設定の無効化が、統合本体のSpeech意味Owner省略を意味する設計にはしない。製品起動は単一rootの完全構成を要求する。
+
 ## 2. ファイルと優先順位
 
 `config/user.yaml`は`schema: yura.user.v1`と`speech`だけを持つ。`speech: null`は明示的な無効化であり、利用可能な発話成功を意味しない。有効時は`profile`と`deployment`の名前だけを指定する。同じ設定rootの`profiles/speech/<name>.yaml`と`profiles/deployment/<name>.yaml`へ解決する。名前はASCII英数字・アンダースコア・ハイフンに限定し、任意path、環境変数展開、任意module importを許可しない。
