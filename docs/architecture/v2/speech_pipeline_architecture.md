@@ -220,6 +220,16 @@ B prepared ≠ B must be spoken。
 
 ---
 
+### 発話・沈黙・身体と非直列実行
+
+- 発言意図を確定した場合、Speech Semantics→Character Language→検証→Performance/TTS/Presentationの各責務を維持する。実際に提示された範囲だけを提示済み事実として記録する。音声出力がない場合も意味生成Ownerを削除しない。
+- **発話Aの再生終了を、次のAppraisal/Executive/Speech B準備開始の条件にしない。** independent lane/queueにより先行準備し、旧候補の取消、現在性再検証、interrupt/fairness/backpressureを行う。
+- 会話が盛り上がり、次の発言が必要と判断され、出力準備が間に合う環境では、発話Aの終了から発話Bの開始まで**1秒未満**を実現する。固定の発話間隔を設定する要件ではなく、実測で判定する。
+- 発話意欲が低い等の文脈では、長時間または継続的な沈黙を選べる。連続発話と沈黙を二つの固定モードにはしない。
+- Speech/BodyはExecutiveからの兄弟経路であり、Character言語化の完了がBody意図の開始条件とは限らない。Bodyは意図・表現傾向・物理制約から連続動作を生成し、装置不在を実動作成功へ読み替えない。
+- LLM、TTS、描画、Body、DB、Reflectionの待機は無関係な認知を止めない。資源上限はbounded queueで管理し、global async lock/serial loopでLLM全体を待たない。古い候補はOwnerごとのrevision/generationで拒否する。
+- すべてのLLMで実際に1秒以内の応答を保証するという意味ではない。資源不足と内部の直列待ちを区別し、遅延を計測可能にする。
+
 ## 9. PreparedSpeechCandidate
 
 ```text
@@ -499,15 +509,3 @@ policyとgeneration/expiry fenceが所有し、#721は`created_at`から再計�
 Authorityにしない。stale、generation mismatch、runtime expiry、型不一致は出力readerを呼ばずに既存の
 candidate拒否・回収経路へ渡す。#720のTTS production connection、provider、voice、policyの選択とfallbackは
 この要求にも#721にも持たせない。
-
----
-
-## 自律的な連続発話と沈黙の受入補足
-
-[自律人格・行動契約](autonomous_character_contracts.md)の発言/沈黙要件を適用する。Speechを周期駆動のテキスト生成器へしない。Executiveが発話意図を確定した場合だけ正規のSpeech Semantics/Character/Verifier/Performance/Presentationに進む。
-
-話したい意図が続く場合、前の発話Aの再生中にも次のExecutive/意味計画/発話B準備を開始でき、準備・出力条件が整った時はA終了からB開始の提示間隔を**1秒未満**にする。ただし間隔が固定された発話タイマーを設けず、不要なら沈黙を選ぶ。再生中の後続候補も提示前のcurrentness・割込・cancel・queue上限・出典・実行事実を検証する。
-
-Internal Stateの時刻別関数投影や生のEmotion/Desire/Drive値をCharacter Languageへ直送して発言意味を再判断させない。[時間関数契約](internal_state_trajectory_contracts.md)に従い、Executiveで判断し、Speech Semanticsで確定した意味とCharacterの表現制約を下流へ提供する。
-
-TTS/Presentation/Avatar未接続でも本体のSpeech意味Ownerは構成必須。テキスト候補生成と実際の音声/画面提示の成功は別の事実であり、Provider不在を成果成功へ変換しない。
