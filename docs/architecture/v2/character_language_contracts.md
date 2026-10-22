@@ -95,6 +95,14 @@ bounded discourse contextが必要な場合は後述するtyped constraint view�
 
 ---
 
+### 時間関数由来状態のCharacter言語化境界
+
+[自律人格契約](unified_core_architecture.md)と[時間関数契約](appraisal_internal_state_contracts.md)の採用後も、Character Languageは**How-to-say**に限定する。Executiveが参照した時刻別の生Emotion/Desire/Drive/Motivation値、関数のコード/パラメータ、raw temporal historyをCharacter LLMの入力へ追加しない。
+
+Character Languageが参照するのは確定済みの`SpeechSemanticPlan`、信頼済みCharacter Profileと上流Ownerが意味化した対人・談話・表現制約に限る。数値の独自再解釈、情動ラベルの復唱、未根拠の強度・断定度追加、固定の言い換え/反応辞書は禁止する。
+
+Characterの性格・話し方・発言スタイルは人物設定に由来し、特定キャラクター名のプログラム固定値ではない。実LLM品質は発話全経路でHuman Verificationする。
+
 ## 3. Existing upstream contracts
 
 ### 3.1 SpeechSemanticPlan
@@ -704,13 +712,3 @@ Prompt本文、Character Bible全文、secretをmetricsへ記録しない。
 - Design Reviewでblocking finding 0。
 
 以後Design → Codeを維持する。
-
----
-
-## 時間関数由来状態のCharacter言語化境界
-
-[自律人格契約](autonomous_character_contracts.md)と[時間関数契約](internal_state_trajectory_contracts.md)の採用後も、Character Languageは**How-to-say**に限定する。Executiveが参照した時刻別の生Emotion/Desire/Drive/Motivation値、関数のコード/パラメータ、raw temporal historyをCharacter LLMの入力へ追加しない。
-
-Character Languageが参照するのは確定済みの`SpeechSemanticPlan`、信頼済みCharacter Profileと上流Ownerが意味化した対人・談話・表現制約に限る。数値の独自再解釈、情動ラベルの復唱、未根拠の強度・断定度追加、固定の言い換え/反応辞書は禁止する。
-
-Characterの性格・話し方・発言スタイルは人物設定に由来し、特定キャラクター名のプログラム固定値ではない。実LLM品質は発話全経路でHuman Verificationする。
