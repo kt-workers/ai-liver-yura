@@ -141,6 +141,16 @@ This snapshot is test/operations provenance, not Domain State.
 
 ---
 
+### 自律主体の完成経路と関数状態のSystem受入
+
+正本補足は[自律人格契約](unified_core_architecture.md)および[時間関数契約](appraisal_internal_state_contracts.md)。標準`python -m app`で全論理Ownerを同一runに登録することと、実際に内部契機→Appraisal/State→時間投影→Attention/Executive→Speech/Body→結果→Memory/Reflectionへ流れることを個別に観測する。入力待ちや固定発話間隔で自律性を代替しない。
+
+信頼済み状態値・時刻・原因・推移・policy世代の提供、LLM候補commit前の鮮度、無根拠baselineなし、Speechに生数値を再導入しないことをtraceで確認する。発話する場合も沈黙する場合も正規判断結果である。
+
+発話Aの提示中に次の思考と発話B準備を進め、出力条件が整えば提示間隔1秒未満を測定する。遅いTTS、DB、Body、画面が無関係な認知を止めないこと、欠落したProvider/出力が成功に化けないことも確認する。
+
+七層人格・九系統状態の分離、Character設定差替え、復元Owner承認、Python 3.10.5、pytest全体1,000件以内の検証を[受入対応表](unified_core_acceptance_matrix.md)に接続する。旧数値方式との改善率比較/A-B試験をSystem合格条件に追加しない。
+
 ## 6. Startup topology
 
 Startup is dependency-aware but not one long blocking readiness barrier for every optional service.
@@ -661,15 +671,3 @@ Meaning・Appraisal・Attention・Executiveのsource event / root_trigger / trig
 ## 統合構成の正式起動
 
 `python -m app` は[統合本体アーキテクチャ](unified_core_architecture.md)の全必須Ownerを同一runに組み立てる。旧S2専用CLIと最小Coreは廃止し、本体の全機能を接続して検証する。Speech構成とProviderの接続は正規Ownerの方針を保ち、未構成・availability不足を成功へ読み替えない。
-
----
-
-## 自律主体の完成経路と関数状態のSystem受入
-
-正本補足は[自律人格契約](autonomous_character_contracts.md)および[時間関数契約](internal_state_trajectory_contracts.md)。標準`python -m app`で全論理Ownerを同一runに登録することと、実際に内部契機→Appraisal/State→時間投影→Attention/Executive→Speech/Body→結果→Memory/Reflectionへ流れることを個別に観測する。入力待ちや固定発話間隔で自律性を代替しない。
-
-信頼済み状態値・時刻・原因・推移・policy世代の提供、LLM候補commit前の鮮度、無根拠baselineなし、Speechに生数値を再導入しないことをtraceで確認する。発話する場合も沈黙する場合も正規判断結果である。
-
-発話Aの提示中に次の思考と発話B準備を進め、出力条件が整えば提示間隔1秒未満を測定する。遅いTTS、DB、Body、画面が無関係な認知を止めないこと、欠落したProvider/出力が成功に化けないことも確認する。
-
-七層人格・九系統状態の分離、Character設定差替え、復元Owner承認、Python 3.10.5、pytest全体1,000件以内の検証を[受入対応表](unified_core_acceptance_matrix.md)に接続する。旧数値方式との改善率比較/A-B試験をSystem合格条件に追加しない。
