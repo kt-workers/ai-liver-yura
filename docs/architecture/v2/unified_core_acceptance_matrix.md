@@ -46,7 +46,7 @@
 
 ## 5. 自律人格と関数状態の追加受入条件
 
-根拠: [自律人格と統合本体](autonomous_character_contracts.md)、[内部状態の時間関数](internal_state_trajectory_contracts.md)。これらは既存UCを置換するのではなく、その未達部分と相互参照する。今回の設計編集は製品コード/試験のPASSを意味しない。
+根拠: [自律人格と統合本体](unified_core_architecture.md)、[内部状態の時間関数](appraisal_internal_state_contracts.md)。これらは既存UCを置換するのではなく、その未達部分と相互参照する。今回の設計編集は製品コード/試験のPASSを意味しない。
 
 | ID | 完成体で観測すべき振る舞い | 合否判定の境界 |
 | --- | --- | --- |
