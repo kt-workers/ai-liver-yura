@@ -31,6 +31,53 @@ Snapshotはmonotonic `revision`とtimezone-aware `updated_at`を持つimmutable 
 
 `revision`は`source_context_revision`とは独立したstate世代である。Reducerがsource contextを変えずにstateだけ更新できるため、Internal Stateを入力にするlong-running Executiveはrequest時のこのrevisionを`ExecutiveFreshnessStamp`へ保持し、LLM完了後にcurrent state revisionを読み直して一致しない結果をcommitしない。これをFoundation共通`RevisionVector`へ暗黙に包含したものとして扱わない。
 
+### 時間関数管理の基本原則
+
+- 内部状態は数値を廃止するのではなく、**Reducerが確定した有限数値・原因・世代をアンカーとして、採用済みの時間関数を時刻指定で評価できる状態**とする。投影した値のみを「心理状態の全体」とみなさない。
+- 既存9系統のfacet identity、`InternalStateSnapshot`、`InternalStateReducer`、`AppraisalCandidate`、`StateDeltaProposal`、stale/currentness規則を維持する。
+- **確定状態**と**関数を読んで得た時点別投影**を別型・別Authorityとして扱う。投影のreadは状態更新、Goal、発話決定、実測事実ではない。
+- LLMや記憶やBodyが確定状態を直接書かない。発話/沈黙はExecutiveの選択であり、値の閾値判定を新設しない。
+- 任意のPython関数オブジェクト、LLM生成コード、eval、pickleを状態の保存形式にしない。関数種別・policy identity/revisionと検証済みパラメータを宣言的に保存する。
+
+以下は新たに導入すべき**論理契約名**であり、現在のPythonに実装済みという意味ではない。
+
+```text
+StateTrajectoryAnchor
+- facet_ref                         # 既存kind/key/target_ref
+- committed_value                   # Reducerが確定した値 [-1,1]
+- committed_at                      # timezone-aware絶対時刻
+- state_revision
+- source_context_revision
+- confidence                        # [0,1]
+- cause_refs[]
+- evolution_policy_id/revision
+
+TemporalFacetProjection
+- facet_ref
+- as_of                              # 1 request中共通の評価時刻
+- anchor_identity
+- projected_value?                   # [-1,1]; 評価不可ならなし
+- evolution: DECAYED | HELD_NO_RULE | NOT_EVALUABLE
+- delta_since_anchor?                # 算出根拠があるときのみ
+- supported_trend?                   # 履歴・方針から示せる変化
+- cause_refs[] / evidence_refs[]
+- evolution_policy_id/revision
+
+InternalStateTemporalView
+- source_state_revision
+- source_context_revision
+- as_of
+- projections[]
+- supported_baseline_differences[]   # 根拠ある個体基準に限る
+- evidence_refs[]
+- view_identity
+```
+
+- 既存の`InternalStateFacet.current/previous/last_delta/confidence/causes/updated_at`は確定値のまま保持する。新たな投影でその値を上書きしない。
+- facetsが未登録なら0へ補完せず未観測として扱う。過去感情記憶やCharacter静的Traitから新しい現在facetを捏造しない。
+- view全体を同じstate revision、source context revision、関数policy generation、`as_of`に束縛し、部分取得値を異なる世代から寄せ集めない。
+- 現在値、直近の確定delta、原因、時間的推移、通常との差をそれぞれ別項目とする。未確定の基準や不連続点の導関数を作らない。
+
 ## 3. Appraisal Candidate
 
 `AppraisalCandidate`は次を持つ。
@@ -79,6 +126,24 @@ fast ruleはtyped event kind・typed meaning fieldを入力にし、raw text、k
 
 decayは明示的な`DecayPolicy`と経過秒からdeterministic proposalを生成する。wall clockをDomain内部で読むこと、sample/timer回数をdelta量にすること、全facetをneutralへ即時resetすることを禁止する。facetごとのhalf-lifeとneutral baselineを使い、elapsedが同じなら同じproposalを返す。
 
+### AppraisalとReducerの時刻別状態調停
+
+```text
+信頼済みEvent/Meaning/Memory等
+ → AppraisalCandidate / StateDeltaProposal
+ → ownerがcurrent snapshotとpolicy generationを確認
+ → Decay確定が必要なら既存Decay ProposalをReducerへcommit
+ → 新しい確定snapshotを基準にAppraisal候補を再構築/現在性検証
+ → Reducerが唯一の短い原子的commitを行う
+ → state revisionを進め、新しいanchorとして公開
+ → 時刻指定read view、Attention/Executive/Bodyへ由来付きで投影
+```
+
+- 読み取っただけでは`InternalStateSnapshot.revision`を増やさない。減衰を先に正規commitした場合は、新しいanchorから将来分を評価する。同じ経過秒を二重に減衰しない。
+- Appraisalの旧候補を新しいanchorへ付け替えず、元revision mismatchならstale reject。必要なら新requestを開始する。古い結果を最新状態へ暗黙mergeしない。
+- Decay/Presentation/Executiveの独立した非同期処理はDomain lockを待ち続けない。Reducer lockは短いatomic mutationのみを保護し、LLM/DB/外部callbackを内包しない。
+- この調停フローは**新しい設計要求**であり、現在のReducerが時点別投影を自動適用しているという意味ではない。
+
 ## 7. Startup / Resume
 
 startup/resumeはtyped lifecycle eventとしてAppraisalへ入る。previous snapshot、停止時間、現在contextからdecay/reappraisal candidateを生成する。previous valueをcurrentへ無条件復元せず、固定neutralや固定Awakening presetにも置換しない。Speech/Body/Silence選択は後続Attention/Executive責務である。
@@ -116,6 +181,17 @@ Deep Appraisal awaitは呼出taskだけを待たせ、global lock/queueを所有
 - slow Deep Appraisal中もunrelated async taskが進行
 - Input Meaning、Goal、Attention、Character、Body、MemoryのAuthorityを奪わない
 - 全公開snapshotがstrict JSON serializableかつimmutable
+
+### 関数状態の未定義値と実装境界
+
+本契約は**関数評価の正本構造**を定めるが、次を架空の値で埋めない。
+
+- 未定義facetの自然変化・回復・相互作用に関する数式。
+- 個体baselineの観測窓・品質・適用基準。
+- 投影viewに固有の容量、秒数による意味失効、履歴圧縮・保存頻度。
+- Owner固有のrestart-safe current stateを正式承認するための移行条件。
+
+実装着手時は、Appraisalの正規状態更新Owner、Executiveの入力schema/port/fence、PersistenceのDomain-owned再構築、Speech/Characterの権限をそれぞれ個別に改修する。現在のソースがこの契約を満たしたという記述ではない。
 
 ## 12. Deep Appraisalのpost-await live freshness — Issue #414
 
@@ -226,15 +302,3 @@ LLM待機中にstaleになった候補はReducerへ渡す前に拒否する。�
 ## #690の本番構成参照
 
 Deep Appraisal実行方針、fresh-start初期化方式、Decay具体規則と構成世代の値の正本は[Appraisalの本番構成](appraisal_production_configuration.md)とする。既存の意味・Reducer Authority・式・現在性を変更せず、ここへ具体値を重複定義しない。同文書は設計レビュー待ちであり、resource・loader・factoryの実装や本番採用は未完了。
-
----
-
-## 時間関数による状態投影の正本補足
-
-[内部状態の時間関数契約](internal_state_trajectory_contracts.md)を採用する。九系統facetの各値・前値・delta・原因・時刻とReducer唯一のmutation Authorityを保ったまま、確定anchorとversionedな変化方針を明示的なas_ofで評価する。
-
-時刻別の`TemporalFacetProjection`と`InternalStateTemporalView`は非確定read modelである。既存`InternalStateSnapshot`への上書き、revision増分、Goal/Actionの暗黙確定を行わない。存在しないfacetを0とみなさず、根拠のない個体baselineを生成しない。
-
-関数評価値をStateへ反映する場合は必ず既存`AppraisalCandidate`/`StateDeltaProposal`→`InternalStateReducer`のcommit gateを通し、同じ経過時間の二重減衰を防ぐ。fast/deep LLM、state/source revision、post-await freshnessと局所的なatomic mutationを維持する。
-
-Character Languageは本read modelをraw入力として再解釈しない。Executiveへの投影は正規の型付き入力と世代検査に従う。
