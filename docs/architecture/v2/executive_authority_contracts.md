@@ -49,6 +49,19 @@ snapshotは型付きselection boundaryで構築する。source eventはtrigger l
 
 Provider await後、commit直前のcurrent policy世代がsnapshot世代と異なる場合、結果はstaleとして拒否する。次requestはcurrent policyによるsnapshotを新規構築する。
 
+### 時系列内部状態のLLM入力
+
+既存の`ExecutiveContextSnapshot.internal_state`は確定`InternalStateSnapshot`のままとし、隣接する**新しい型付き項目**`internal_state_temporal`を設ける。既存の`executive.context.v2`へ無断で追加せず、次の互換でない明示schema世代（例: v3）を所有者の設計/実装で定義してから、serializer/parser/Role instructionsを一致させる。例の世代番号はこの設計で実際に登録されたとはみなさない。
+
+LLMには、確定値と投影値の区別、同じ評価時刻、直近の確定状態変化、増加/減少/維持の根拠、原因参照、policy世代、必要なMemory/Goal/Attention/Situationを渡す。根拠ある個体基準だけを相対差として提供する。単なる`0.7`を「喜びが強い」と固定翻訳しない。
+
+- Executiveは`respond / act / wait / ignore / continue_activity / defer / refuse / silence`を自律的に選ぶ。数値・変化率による固定閾値の発話ルールは設けない。
+- Executiveに渡すのは関数**のコード**ではなく、検証可能な型付きの状態投影と出典。新しい「時間の状態解釈LLM」を必須段としない。
+- LLM完了後は既存4-revision stamp（source/goal/attention/internal state）に加えて、使用した関数policy generationと必要な状態viewの現在性を検査する。LLM待機中に状態更新や関数方針変更があれば、旧判断を確定しない。
+- **時間経過だけ**で全LLMが毎瞬間staleになる扱いはしない。時刻の有効性・重要変化の再評価範囲はOwnerの明示policyが必要であり、未確定の秒数や閾値を導入しない。
+- Snapshotは既存のBrain共通bounded context制約を用いる。必要な根拠を切り捨てて「正常」へ変換しない。容量不足は型付き失敗。
+- Speech Semanticsは上流で確定した意図と正規Factを使用する。Character Language LLMは生のEmotion/Desire/Drive値、関数、raw historyを再解釈しない。人物らしい表現は確定した意味とCharacter Profile/表現制約を受け取る。
+
 ## 4. 出力契約
 
 `ExecutiveDecisionCandidate` はLLMまたは決定論的policyが生成する未確定候補である。
@@ -467,15 +480,3 @@ MeaningPolicy V1の採用値はFACT_GROUNDED / 1 / 1。GRATITUDEのevidence要�
 ## 本番構成の供給境界（#691）
 
 実行方針・Requirements規則の初期採用値、厳密loader、不変DTO、factory、由来は[Executiveの本番構成](executive_production_configuration.md)を正とする。本書の意味・世代・最終Fenceと§9.9 / §11.1を維持し、具体的なProvider mappingとS2登録は#692 / #360が所有する。
-
----
-
-## 時間関数由来の内部状態を判断材料とする追加契約
-
-[時間関数契約](internal_state_trajectory_contracts.md)が定める時刻指定の`InternalStateTemporalView`を、既存`ExecutiveContextSnapshot.internal_state`（確定snapshot）とは別のtyped入力として加える。`as_of`、投影値、変化方向と確定原因、state revision、policy generation、view identityを同じ有界snapshotに束縛する。
-
-これは既存`executive.context.v2`へ黙ってfieldを追加する変更ではない。製品実装時に互換でない明示schema世代を登録し、serializer、Role instructions、Provider parser、commit gateの対応を揃える。実装済みの宣言ではない。
-
-LLMが人格・Memory・Goal・Attention・Situationと時間的文脈から行動/発話/沈黙を選ぶ。`projected_value > threshold`による固定発話ルールを設けない。関数から未観測経験や個体の通常値を補作しない。
-
-既存4-revision stampとcurrentness/fenceを維持し、追加のpolicy世代変更と意味上必要な投影の現在性も検証する。ただし時刻が経過しただけで全ての判断候補を毎瞬間無制限に失効させない。時間有効性の数値は未確定であり、実装が推測で埋めない。
